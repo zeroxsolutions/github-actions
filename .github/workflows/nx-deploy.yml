@@ -31,11 +31,6 @@ on:
         required: false
         type: string
         default: ''
-      ref:
-        description: 'Ref of this repository supplying the nx-setup action. Keep it aligned with the ref you called this workflow at.'
-        required: false
-        type: string
-        default: v1
 
 jobs:
   deploy:
@@ -43,7 +38,11 @@ jobs:
     environment:
       name: ${{ inputs.environment }}
     steps:
-      - uses: zeroxsolutions/github-actions/nx-setup@${{ inputs.ref }}
+      # Pinned literal, not an input: `uses:` admits no expression at step
+      # level. The action and this workflow ship from one repository under one
+      # tag, so referencing the same moving tag keeps them in lockstep by
+      # construction - moving v1 moves both together.
+      - uses: zeroxsolutions/github-actions/nx-setup@v1
 
       - name: Deploy
         shell: bash
