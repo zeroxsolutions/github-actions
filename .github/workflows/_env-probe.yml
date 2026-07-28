@@ -1,0 +1,25 @@
+# TEMPORARY probe. Answers one question no documentation states plainly:
+# when a caller in repository A uses this reusable workflow from repository B,
+# and this job declares an environment, is that environment resolved from A or
+# from B? Both repositories get a `probe` environment with a differently-valued
+# PROBE_WHERE variable, so a single run is decisive.
+#
+# Delete this file and both `probe` environments once the answer is recorded.
+name: _env-probe
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - name: report
+        run: |
+          echo "PROBE_WHERE  = '${{ vars.PROBE_WHERE }}'"
+          echo "repository   = ${{ github.repository }}"
+          echo "workflow_ref = ${{ github.workflow_ref }}"
