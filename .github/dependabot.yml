@@ -1,0 +1,15 @@
+# Keeps the SHA pins in nx-setup current.
+#
+# Without this, pinning third-party actions by commit SHA quietly becomes
+# pinning them to whatever was current the day they were written - which is the
+# exact failure SHA-pinning is meant to prevent. Each bump is reviewed here once
+# and reaches every product through the moving `v1` tag.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci

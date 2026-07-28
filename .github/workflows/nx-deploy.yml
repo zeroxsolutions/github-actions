@@ -1,0 +1,56 @@
+# Deploy a product by running an nx target per environment.
+#
+# The environment is declared on this job, taking its name from an input, and it
+# resolves against the CALLING repository - verified by experiment, because the
+# documentation does not state it. So each product keeps its own environments,
+# its own credentials, and its own protection rules; this repository holds the
+# definition and can hold no product's secret even in principle.
+#
+# Deploys sweep with run-many rather than affected on purpose. Workers are
+# coupled at runtime by service bindings and queues, which the build graph does
+# not model, so shipping a subset admits version skew between two independently
+# deployed services.
+name: nx-deploy
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: 'Space-separated nx deploy targets, e.g. "wrangler:deploy".'
+        required: true
+        type: string
+      environment:
+        description: >
+          Name of the environment in the CALLING repository. It supplies the
+          credentials and any protection rule, so a protected name pauses this
+          job until a reviewer approves.
+        required: true
+        type: string
+      configuration:
+        description: 'nx configuration to select, passed as -c. Defaults to the environment name, which is the convention these products follow.'
+        required: false
+        type: string
+        default: ''
+      ref:
+        description: 'Ref of this repository supplying the nx-setup action. Keep it aligned with the ref you called this workflow at.'
+        required: false
+        type: string
+        default: v1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: zeroxsolutions/github-actions/nx-setup@${{ inputs.ref }}
+
+      - name: Deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          config='${{ inputs.configuration }}'
+          [ -n "$config" ] || config='${{ inputs.environment }}'
+          pnpm nx run-many -t ${{ inputs.targets }} -c "$config"

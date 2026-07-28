@@ -1,0 +1,62 @@
+# The one definition of "get an nx workspace ready to run targets".
+#
+# Every workflow in this repository composes this action, and every product
+# reaches it through those workflows - so a toolchain change lands here once
+# instead of in each product's .github/.
+#
+# It reads its versions from the CALLING repository's own declarations rather
+# than pinning them here: Node from `.tool-versions`, pnpm from the
+# `packageManager` field in `package.json`. A product on a different Node version
+# therefore needs no change to this file, and a product that bumps its toolchain
+# does not have to remember a workflow exists.
+#
+# Third-party actions are pinned by commit SHA. That is where the real
+# supply-chain risk sits, and pinning here pins it once for every product rather
+# than once per product (see the ref policy in README.md).
+name: nx-setup
+description: Check out an nx workspace, install its toolchain and dependencies, and restore the nx cache.
+
+inputs:
+  fetch-depth:
+    description: >
+      Git history depth. The default of 0 (full history) is what `nx affected`
+      needs to resolve a base commit; a workflow that never runs `affected` may
+      pass 1 to check out faster.
+    required: false
+    default: '0'
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the calling repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+
+    # Before setup-node: it reads the pnpm store path to build its cache key, so
+    # pnpm has to be on PATH first. Also reads `packageManager` from the checked
+    # out package.json, which is why checkout precedes it.
+    - name: Install pnpm
+      uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+    - name: Install Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: .tool-versions
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # nx's own cache, distinct from the pnpm store cache above. Keyed on the
+    # lockfile so a dependency change starts cold; restore-keys let an unchanged
+    # lockfile reuse the previous run's computation.
+    - name: Restore the nx cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .nx/cache
+        key: nx-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
+        restore-keys: |
+          nx-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+          nx-${{ runner.os }}-

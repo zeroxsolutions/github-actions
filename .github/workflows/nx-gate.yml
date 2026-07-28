@@ -1,0 +1,77 @@
+# Run nx targets against the calling repository. No deployment environment is
+# declared here, so a job running this workflow resolves no environment secret -
+# a gate is structurally incapable of deploying, rather than merely forbidden
+# from it. Deploys use nx-deploy.yml instead.
+#
+# For a workflow that needs bespoke steps of its own (a container, a git
+# assertion), compose the `nx-setup` action directly in your own job instead of
+# calling this; a job that delegates to a reusable workflow cannot add steps.
+name: nx-gate
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: 'Space-separated nx targets, e.g. "lint build test".'
+        required: true
+        type: string
+      mode:
+        description: >
+          "affected" runs only what the change reaches - the right question for a
+          gate. "run-many" sweeps every project defining the target. Falls back to
+          run-many automatically when no usable base commit exists.
+        required: false
+        type: string
+        default: affected
+      ref:
+        description: 'Ref of this repository supplying the nx-setup action. Keep it aligned with the ref you called this workflow at.'
+        required: false
+        type: string
+        default: v1
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: zeroxsolutions/github-actions/nx-setup@${{ inputs.ref }}
+
+      # A push that creates a branch reports an all-zero "before" commit, and a
+      # shallow-cloned default branch may not be present to diff against. Rather
+      # than fail or silently select nothing, degrade to a full sweep - a
+      # superset is always a safe answer for a gate.
+      - name: Resolve the affected range
+        id: range
+        shell: bash
+        run: |
+          mode='${{ inputs.mode }}'
+          base=''
+          if [ "${{ github.event_name }}" = 'pull_request' ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+          else
+            base='${{ github.event.before }}'
+          fi
+          case "$base" in
+            ''|0000000000000000000000000000000000000000) base='' ;;
+          esac
+          if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "base $base is not reachable in this checkout; sweeping instead"
+            base=''
+          fi
+          if [ "$mode" = 'affected' ] && [ -z "$base" ]; then
+            echo 'no usable base commit; falling back to run-many'
+            mode='run-many'
+          fi
+          echo "mode=$mode"   >> "$GITHUB_OUTPUT"
+          echo "base=$base"   >> "$GITHUB_OUTPUT"
+
+      - name: Run the targets
+        shell: bash
+        env:
+          NX_BASE: ${{ steps.range.outputs.base }}
+          NX_HEAD: ${{ github.sha }}
+        run: |
+          if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
+            pnpm nx affected -t ${{ inputs.targets }}
+          else
+            pnpm nx run-many -t ${{ inputs.targets }}
+          fi
