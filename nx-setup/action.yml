@@ -4,11 +4,14 @@
 # reaches it through those workflows - so a toolchain change lands here once
 # instead of in each product's .github/.
 #
-# It reads its versions from the CALLING repository's own declarations rather
-# than pinning them here: Node from `.tool-versions`, pnpm from the
-# `packageManager` field in `package.json`. A product on a different Node version
-# therefore needs no change to this file, and a product that bumps its toolchain
-# does not have to remember a workflow exists.
+# It reads its versions from the CALLING repository's own declarations rather than
+# pinning them here: both Node and pnpm come from `.tool-versions`, so a product
+# bumps its toolchain in one file and no workflow has to be remembered.
+#
+# pnpm needs the explicit read below because `pnpm/action-setup` accepts only its
+# own `version` input or `packageManager` in package.json - it never reads
+# `.tool-versions`. Deriving it here is what lets a product drop `packageManager`,
+# whose self-switching gives different machines different pnpm versions.
 #
 # Third-party actions are pinned by commit SHA. That is where the real
 # supply-chain risk sits, and pinning here pins it once for every product rather
@@ -33,11 +36,28 @@ runs:
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
 
+    - name: Resolve the pnpm version from .tool-versions
+      id: pnpm
+      shell: bash
+      run: |
+        if [ ! -f .tool-versions ]; then
+          echo '::error::.tool-versions is missing; nx-setup reads the pnpm version from it'
+          exit 1
+        fi
+        version="$(awk '$1 == "pnpm" { print $2; exit }' .tool-versions)"
+        if [ -z "$version" ]; then
+          echo '::error::.tool-versions declares no pnpm entry'
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "pnpm $version"
+
     # Before setup-node: it reads the pnpm store path to build its cache key, so
-    # pnpm has to be on PATH first. Also reads `packageManager` from the checked
-    # out package.json, which is why checkout precedes it.
+    # pnpm has to be on PATH first.
     - name: Install pnpm
       uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      with:
+        version: ${{ steps.pnpm.outputs.version }}
 
     - name: Install Node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
