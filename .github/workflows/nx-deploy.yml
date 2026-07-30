@@ -37,32 +37,18 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ${{ inputs.environment }}
+    # `env` accepts a map, so the whole vars context forwards in one line. A
+    # build-time value cannot arrive any other way: a framework that inlines
+    # config at build (Next's NEXT_PUBLIC_*) reads the build process's
+    # environment, which a runtime binding never reaches. Only `vars` - a secret
+    # in every build's environment is not something to hand out by default.
+    env: ${{ vars }}
     steps:
       # Pinned literal, not an input: `uses:` admits no expression at step
       # level. The action and this workflow ship from one repository under one
       # tag, so referencing the same moving tag keeps them in lockstep by
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/nx-setup@v1
-
-      # Every variable on the environment becomes an env var for the deploy.
-      # A build-time value cannot arrive any other way: a framework that inlines
-      # config at build (Next's NEXT_PUBLIC_*) reads the build process's
-      # environment, which a runtime binding never reaches. Names are listed,
-      # values never echoed. Blanket-forwarding is what keeps this file free of
-      # any product's identifiers.
-      - name: Export the environment's variables
-        shell: bash
-        env:
-          VARS_JSON: ${{ toJSON(vars) }}
-        run: |
-          printf '%s' "$VARS_JSON" | jq -r 'keys_unsorted[]' | while read -r name; do
-            {
-              printf '%s<<__GH_VAR_EOF__\n' "$name"
-              printf '%s' "$VARS_JSON" | jq -r --arg n "$name" '.[$n]'
-              printf '__GH_VAR_EOF__\n'
-            } >> "$GITHUB_ENV"
-            echo "exported $name"
-          done
 
       - name: Deploy
         shell: bash
