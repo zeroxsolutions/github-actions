@@ -44,26 +44,6 @@ jobs:
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/nx-setup@v1
 
-      # Every variable on the environment becomes an env var for the deploy.
-      # A build-time value cannot arrive any other way: a framework that inlines
-      # config at build (Next's NEXT_PUBLIC_*) reads the build process's
-      # environment, which a runtime binding never reaches. Names are listed,
-      # values never echoed. Blanket-forwarding is what keeps this file free of
-      # any product's identifiers.
-      - name: Export the environment's variables
-        shell: bash
-        env:
-          VARS_JSON: ${{ toJSON(vars) }}
-        run: |
-          printf '%s' "$VARS_JSON" | jq -r 'keys_unsorted[]' | while read -r name; do
-            {
-              printf '%s<<__GH_VAR_EOF__\n' "$name"
-              printf '%s' "$VARS_JSON" | jq -r --arg n "$name" '.[$n]'
-              printf '__GH_VAR_EOF__\n'
-            } >> "$GITHUB_ENV"
-            echo "exported $name"
-          done
-
       - name: Deploy
         shell: bash
         env:
