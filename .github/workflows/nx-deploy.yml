@@ -34,7 +34,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: ${{ inputs.environment }}
     # `env` accepts a map, so the whole vars context forwards in one line. A
