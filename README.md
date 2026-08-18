@@ -1,7 +1,8 @@
 # github-actions
 
-Shared CI/CD building blocks for ZeroXSolutions nx workspaces. Products **call**
-what lives here; they do not copy it. One fix lands once, for everyone.
+Shared CI/CD building blocks for ZeroXSolutions monorepos - Nx and Turborepo
+alike. Products **call** what lives here; they do not copy it. One fix lands
+once, for everyone.
 
 ## What is here
 
@@ -10,20 +11,37 @@ what lives here; they do not copy it. One fix lands once, for everyone.
 | `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, restore the nx cache. The one definition of "ready to run nx targets". |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares **no** environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
+| `turbo-setup/action.yml` | composite action | The same, for a Turborepo workspace: caches `.turbo`, and asserts `.tool-versions` and the manifest agree on pnpm. |
+| `.github/workflows/turbo-gate.yml` | reusable workflow | Run turbo tasks. Declares **no** environment, so a gate cannot reach a deployment credential. |
+| `.github/workflows/turbo-deploy.yml` | reusable workflow | Run turbo deploy tasks inside a named environment. |
 
-**Which one to use.** Call `nx-gate` / `nx-deploy` when a job only needs to run
-targets. Compose `nx-setup` directly in your own job when the job also needs
-steps of its own - a job that delegates to a reusable workflow cannot add steps
-to it.
+**Pick the pair that matches the caller's task runner.** The two sets are
+structurally identical and deliberately kept so: same inputs, same self-hosted
+runner, same pinned third-party SHAs. A product on Nx calls the `nx-*` pair; a
+product on Turborepo calls the `turbo-*` pair. Nothing shares state between them.
+
+**Which one to use.** Call the `*-gate` / `*-deploy` workflow when a job only
+needs to run targets. Compose the matching `*-setup` action directly in your own
+job when the job also needs steps of its own - a job that delegates to a reusable
+workflow cannot add steps to it.
 
 ## Versions come from the caller, not from here
 
-`nx-setup` reads Node from the calling repository's `.tool-versions` and pnpm
-from its `packageManager` field. Nothing here pins a product's toolchain, so a
-product upgrading Node changes one file in its own repository and nothing else.
+Both setup actions read Node **and** pnpm from the calling repository's
+`.tool-versions`. Nothing here pins a product's toolchain, so a product upgrading
+Node changes one file in its own repository and nothing else. A missing
+`.tool-versions`, or one with no pnpm entry, fails loudly rather than guessing.
 
-A product must therefore declare both. A missing `packageManager` field makes the
-pnpm setup fail loudly rather than guess.
+**Turborepo forces a second declaration, and `turbo-setup` checks it.** Turbo
+refuses to resolve a workspace without `devEngines.packageManager` (or the legacy
+`packageManager`) in `package.json`, so a turbo product declares its pnpm version
+in two files whether it wants to or not. `turbo-setup` asserts the two agree and
+stops the run on a mismatch - otherwise the runner installs one pnpm while turbo
+resolves against another, which fails much later and somewhere unrelated.
+
+An Nx product has no such constraint and should keep `packageManager` out of its
+manifest: the field self-switches, which gives different machines different pnpm
+versions.
 
 ## Environments belong to the caller
 

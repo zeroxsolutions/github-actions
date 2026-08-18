@@ -1,0 +1,82 @@
+# Run turbo tasks against the calling repository. No deployment environment is
+# declared here, so a job running this workflow resolves no environment secret -
+# a gate is structurally incapable of deploying, rather than merely forbidden
+# from it. Deploys use turbo-deploy.yml instead.
+#
+# For a workflow that needs bespoke steps of its own (a container, a git
+# assertion), compose the `turbo-setup` action directly in your own job instead
+# of calling this; a job that delegates to a reusable workflow cannot add steps.
+#
+# A task declared in the caller's turbo.json that no package implements runs zero
+# work and exits 0. That is deliberate and is what keeps this file correct on a
+# workspace whose package list keeps changing - but it also means a green run is
+# not by itself evidence that anything was checked. The caller owns that problem
+# (see the package-manifest-complete rule); this workflow cannot see it.
+name: turbo-gate
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: 'Space-separated turbo tasks, e.g. "lint build test".'
+        required: true
+        type: string
+      mode:
+        description: >
+          "affected" runs only what the change reaches - the right question for a
+          gate. "all" sweeps every package implementing the task. Falls back to
+          "all" automatically when no usable base commit exists.
+        required: false
+        type: string
+        default: affected
+
+jobs:
+  run:
+    runs-on: self-hosted
+    steps:
+      # Pinned literal, not an input: `uses:` admits no expression at step
+      # level. The action and this workflow ship from one repository under one
+      # tag, so referencing the same moving tag keeps them in lockstep by
+      # construction - moving v1 moves both together.
+      - uses: zeroxsolutions/github-actions/turbo-setup@v1
+
+      # A push that creates a branch reports an all-zero "before" commit, and a
+      # shallow-cloned default branch may not be present to diff against. Rather
+      # than fail or silently select nothing, degrade to a full sweep - a
+      # superset is always a safe answer for a gate.
+      - name: Resolve the affected range
+        id: range
+        shell: bash
+        run: |
+          mode='${{ inputs.mode }}'
+          base=''
+          if [ "${{ github.event_name }}" = 'pull_request' ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+          else
+            base='${{ github.event.before }}'
+          fi
+          case "$base" in
+            ''|0000000000000000000000000000000000000000) base='' ;;
+          esac
+          if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "base $base is not reachable in this checkout; sweeping instead"
+            base=''
+          fi
+          if [ "$mode" = 'affected' ] && [ -z "$base" ]; then
+            echo 'no usable base commit; falling back to a full sweep'
+            mode='all'
+          fi
+          echo "mode=$mode"   >> "$GITHUB_OUTPUT"
+          echo "base=$base"   >> "$GITHUB_OUTPUT"
+
+      - name: Run the tasks
+        shell: bash
+        env:
+          TURBO_SCM_BASE: ${{ steps.range.outputs.base }}
+          TURBO_SCM_HEAD: ${{ github.sha }}
+        run: |
+          if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
+            pnpm turbo run ${{ inputs.targets }} --affected
+          else
+            pnpm turbo run ${{ inputs.targets }}
+          fi

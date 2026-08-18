@@ -1,0 +1,93 @@
+# Deploy a product by running a turbo task per environment.
+#
+# The environment is declared on this job, taking its name from an input, and it
+# resolves against the CALLING repository - verified by experiment, because the
+# documentation does not state it. So each product keeps its own environments,
+# its own credentials, and its own protection rules; this repository holds the
+# definition and can hold no product's secret even in principle.
+#
+# Deploys sweep rather than using --affected on purpose. Workers are coupled at
+# runtime by service bindings and queues, which the build graph does not model,
+# so shipping a subset admits version skew between two independently deployed
+# services.
+#
+# Turborepo has no equivalent of nx's `-c <configuration>`, so the environment
+# travels to the deploy script as DEPLOY_ENV. The script reads it and passes it
+# to `wrangler deploy --env` (see the deploy-via-turbo-per-env rule).
+name: turbo-deploy
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: 'Space-separated turbo deploy tasks, e.g. "wrangler:deploy".'
+        required: true
+        type: string
+      environment:
+        description: >
+          Name of the environment in the CALLING repository. It supplies the
+          credentials and any protection rule, so a protected name pauses this
+          job until a reviewer approves.
+        required: true
+        type: string
+      deploy-env:
+        description: >
+          Value exported as DEPLOY_ENV for the deploy scripts. Defaults to the
+          environment name, which is the convention these products follow.
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment:
+      name: ${{ inputs.environment }}
+    # `env` accepts a map, so the whole vars context forwards in one line. A
+    # build-time value cannot arrive any other way: a framework that inlines
+    # config at build (Next's NEXT_PUBLIC_*) reads the build process's
+    # environment, which a runtime binding never reaches. Only `vars` - a secret
+    # in every build's environment is not something to hand out by default.
+    #
+    # The VS Code Actions extension flags the next line ("MappingToken was
+    # expected") and is wrong - the runtime takes an expression that evaluates to
+    # a map. Any product's green `deploy / deploy` job is the proof. Spelling it
+    # as a literal map to silence the linter drops every var the map omits, which
+    # ships as a green deploy with a broken frontend.
+    env: ${{ vars }}
+    steps:
+      # Pinned literal, not an input: `uses:` admits no expression at step
+      # level. The action and this workflow ship from one repository under one
+      # tag, so referencing the same moving tag keeps them in lockstep by
+      # construction - moving v1 moves both together.
+      - uses: zeroxsolutions/github-actions/turbo-setup@v1
+
+      - name: Deploy
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          deploy_env='${{ inputs.deploy-env }}'
+          [ -n "$deploy_env" ] || deploy_env='${{ inputs.environment }}'
+
+          # A deploy that runs zero tasks exits 0 and reads as a clean run, so ask
+          # turbo what it PLANS to run before letting it run nothing. `--dry=json`
+          # is the machine-readable answer; scraping the human summary would break
+          # on colour codes and on the next release's wording. `pnpm exec` rather
+          # than `pnpm turbo` so no package-manager banner reaches the parser.
+          #
+          # The filter is load-bearing: `tasks` lists a planned SLOT for every
+          # package the task could apply to, and a package that does not implement
+          # it appears with command "<NONEXISTENT>". Counting the array unfiltered
+          # reports work for a workspace where nothing would run at all.
+          planned="$(DEPLOY_ENV="$deploy_env" pnpm exec turbo run ${{ inputs.targets }} --dry=json \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const t=(JSON.parse(s).tasks||[]).filter(x=>x.command&&x.command!=="<NONEXISTENT>");console.log(t.length)})')"
+          if [ "$planned" -eq 0 ]; then
+            echo "::error::no package implements ${{ inputs.targets }}; nothing would be deployed"
+            exit 1
+          fi
+          echo "deploying $planned task(s) with DEPLOY_ENV=$deploy_env"
+
+          DEPLOY_ENV="$deploy_env" pnpm turbo run ${{ inputs.targets }}
