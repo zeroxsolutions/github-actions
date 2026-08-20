@@ -1,26 +1,12 @@
-# The one definition of "get a Turborepo workspace ready to run tasks".
+# The one definition of "get a Turborepo workspace ready to run tasks", composed
+# by every turbo workflow here so a toolchain change lands once instead of per
+# product.
 #
-# Every turbo workflow in this repository composes this action, and every product
-# reaches it through those workflows - so a toolchain change lands here once
-# instead of in each product's .github/.
+# mise reads the calling repository's `.tool-versions`, and exports PATH through
+# GITHUB_PATH, which the runner prepends - that is what stops a shim left by
+# another version manager from answering first.
 #
-# It reads its versions from the CALLING repository's own declarations rather than
-# pinning them here: both Node and pnpm come from `.tool-versions`, so a product
-# bumps its toolchain in one file and no workflow has to be remembered.
-#
-# pnpm needs the explicit read below because `pnpm/action-setup` accepts only its
-# own `version` input or a manifest field - it never reads `.tool-versions`.
-#
-# UNLIKE nx-setup, this action cannot let a product drop the manifest field.
-# Turborepo refuses to resolve a workspace without `devEngines.packageManager` (or
-# the legacy `packageManager`), so a turbo product declares its pnpm version in two
-# files whether it wants to or not. Two files that must agree and nothing checking
-# them is a drift waiting to happen, so the assertion below IS the check: the build
-# stops on a mismatch rather than installing one pnpm and resolving against another.
-#
-# Third-party actions are pinned by commit SHA. That is where the real
-# supply-chain risk sits, and pinning here pins it once for every product rather
-# than once per product (see the ref policy in README.md).
+# Third-party actions are pinned by commit SHA (see the ref policy in README.md).
 name: turbo-setup
 description: Check out a Turborepo workspace, install its toolchain and dependencies, and restore the turbo cache.
 
@@ -41,66 +27,17 @@ runs:
       with:
         fetch-depth: ${{ inputs.fetch-depth }}
 
-    - name: Resolve the pnpm version from .tool-versions
-      id: pnpm
-      shell: bash
-      run: |
-        if [ ! -f .tool-versions ]; then
-          echo '::error::.tool-versions is missing; turbo-setup reads the pnpm version from it'
-          exit 1
-        fi
-        version="$(awk '$1 == "pnpm" { print $2; exit }' .tool-versions)"
-        if [ -z "$version" ]; then
-          echo '::error::.tool-versions declares no pnpm entry'
-          exit 1
-        fi
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-        echo "pnpm $version"
-
-    # Before setup-node: it reads the pnpm store path to build its cache key, so
-    # pnpm has to be on PATH first.
-    - name: Install pnpm
-      uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+    - name: Install the toolchain
+      uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
       with:
-        version: ${{ steps.pnpm.outputs.version }}
-
-    - name: Install Node
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-      with:
-        node-version-file: .tool-versions
-        cache: pnpm
-
-    # Runs after Node is installed because it parses JSON, and a hand-rolled
-    # grep for a nested field is how you get a false pass on a formatting change.
-    - name: Assert .tool-versions and the manifest agree on pnpm
-      shell: bash
-      env:
-        TOOL_VERSIONS_PNPM: ${{ steps.pnpm.outputs.version }}
-      run: |
-        node - <<'JS'
-        const fs = require('node:fs');
-        const expected = process.env.TOOL_VERSIONS_PNPM;
-        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-        const declared = pkg.devEngines?.packageManager?.version
-          ?? (pkg.packageManager ?? '').replace(/^pnpm@/, '');
-        if (!declared) {
-          console.log('::error::package.json declares neither devEngines.packageManager nor packageManager; turbo cannot resolve the workspace without one');
-          process.exit(1);
-        }
-        if (declared !== expected) {
-          console.log(`::error::pnpm version disagreement - .tool-versions says ${expected}, package.json says ${declared}. Turbo resolves against the manifest and this runner installed the other one.`);
-          process.exit(1);
-        }
-        console.log(`pnpm ${expected} agrees across .tool-versions and package.json`);
-        JS
+        version: 2026.8.9
 
     - name: Install dependencies
       shell: bash
       run: pnpm install --frozen-lockfile
 
-    # Turborepo's own cache, distinct from the pnpm store cache above. Keyed on the
-    # lockfile so a dependency change starts cold; restore-keys let an unchanged
-    # lockfile reuse the previous run's computation.
+    # Only `.turbo` needs it: that is inside the workspace, which checkout
+    # wipes. The pnpm store is outside it and every workflow here is self-hosted.
     - name: Restore the turbo cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
