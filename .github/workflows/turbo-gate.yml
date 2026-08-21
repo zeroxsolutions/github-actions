@@ -40,6 +40,19 @@ jobs:
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/turbo-setup@v1
 
+      # @nx/playwright's inferred target runs `playwright test` alone; only its
+      # executor, which these workspaces do not use, installs the browsers first.
+      # Some repos pass `targets: e2e` without depending on playwright at all.
+      - name: Install Playwright browsers
+        if: ${{ contains(inputs.targets, 'e2e') }}
+        shell: bash
+        run: |
+          [ -e node_modules/@playwright/test ] || {
+            echo 'no playwright in this workspace; nothing to install'
+            exit 0
+          }
+          pnpm exec playwright install
+
       # A push that creates a branch reports an all-zero "before" commit, and a
       # shallow-cloned default branch may not be present to diff against. Rather
       # than fail or silently select nothing, degrade to a full sweep - a
