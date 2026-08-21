@@ -11,7 +11,7 @@ once, for everyone.
 | `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, restore the nx cache. The one definition of "ready to run nx targets". |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares **no** environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
-| `turbo-setup/action.yml` | composite action | The same, for a Turborepo workspace: caches `.turbo`, and asserts `.tool-versions` and the manifest agree on pnpm. |
+| `turbo-setup/action.yml` | composite action | The same, for a Turborepo workspace: caches `.turbo` instead of `.nx/cache`. |
 | `.github/workflows/turbo-gate.yml` | reusable workflow | Run turbo tasks. Declares **no** environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/turbo-deploy.yml` | reusable workflow | Run turbo deploy tasks inside a named environment. |
 
@@ -27,17 +27,15 @@ workflow cannot add steps to it.
 
 ## Versions come from the caller, not from here
 
-Both setup actions read Node **and** pnpm from the calling repository's
-`.tool-versions`. Nothing here pins a product's toolchain, so a product upgrading
-Node changes one file in its own repository and nothing else. A missing
-`.tool-versions`, or one with no pnpm entry, fails loudly rather than guessing.
+Both setup actions install the toolchain with mise, which reads the calling
+repository's `.tool-versions`. Nothing here pins a product's toolchain, so a
+product upgrading Node changes one file in its own repository and nothing else.
 
-**Turborepo forces a second declaration, and `turbo-setup` checks it.** Turbo
-refuses to resolve a workspace without `devEngines.packageManager` (or the legacy
-`packageManager`) in `package.json`, so a turbo product declares its pnpm version
-in two files whether it wants to or not. `turbo-setup` asserts the two agree and
-stops the run on a mismatch - otherwise the runner installs one pnpm while turbo
-resolves against another, which fails much later and somewhere unrelated.
+**Turborepo forces a second declaration of pnpm.** Turbo refuses to resolve a
+workspace without `devEngines.packageManager` (or the legacy `packageManager`)
+in `package.json`, so a turbo product carries its pnpm version in two files
+whether it wants to or not. Keeping them in step is the product's job; nothing
+here compares them.
 
 An Nx product has no such constraint and should keep `packageManager` out of its
 manifest: the field self-switches, which gives different machines different pnpm
