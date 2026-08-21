@@ -38,9 +38,20 @@ on:
         type: string
         default: ''
 
+      timeout-minutes:
+        description: 'Minutes before the job is killed. Deploys measured here run under 5 minutes.'
+        required: false
+        type: number
+        default: 30
+
 jobs:
   deploy:
     runs-on: self-hosted
+    # GitHub's default is 360 minutes, and these runners are self-hosted and take
+    # one job at a time, so a hung job holds a runner out of the pool for six
+    # hours. Killing a deploy leaves a partial sweep - so does the 6-hour
+    # default, six hours later - and re-running the same commit repairs it.
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     environment:
       name: ${{ inputs.environment }}
     # `env` accepts a map, so the whole vars context forwards in one line. A

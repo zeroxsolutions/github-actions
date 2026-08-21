@@ -24,9 +24,20 @@ on:
         type: string
         default: affected
 
+      timeout-minutes:
+        description: 'Minutes before the job is killed. The default clears the slowest gate measured across these repos (18 min, classify, 2026-08-21).'
+        required: false
+        type: number
+        default: 30
+
 jobs:
   run:
     runs-on: self-hosted
+    # GitHub's default is 360 minutes, and these runners are self-hosted and take
+    # one job at a time - so a hung job holds a runner out of the pool for six
+    # hours. Measured 2026-08-21: a stuck e2e held one for 57 minutes and only
+    # stopped because it was cancelled by hand.
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       # Pinned literal, not an input: `uses:` admits no expression at step
       # level. The action and this workflow ship from one repository under one
