@@ -7,7 +7,7 @@
 #
 # Third-party actions are pinned by commit SHA (see the ref policy in README.md).
 name: nx-setup
-description: Check out an nx workspace, install its toolchain and dependencies, and restore the nx cache.
+description: Check out an nx workspace, install its toolchain, authenticate to a private package scope if given a token, install its dependencies, and restore the nx cache.
 
 inputs:
   fetch-depth:
