@@ -72,6 +72,8 @@ jobs:
       # tag, so referencing the same moving tag keeps them in lockstep by
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/turbo-setup@v1
+        with:
+          npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Deploy
         shell: bash
