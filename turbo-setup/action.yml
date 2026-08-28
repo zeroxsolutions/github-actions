@@ -8,7 +8,7 @@
 #
 # Third-party actions are pinned by commit SHA (see the ref policy in README.md).
 name: turbo-setup
-description: Check out a Turborepo workspace, install its toolchain and dependencies, and restore the turbo cache.
+description: Check out a Turborepo workspace, install its toolchain, authenticate to a private package scope if given a token, install its dependencies, and restore the turbo cache.
 
 inputs:
   fetch-depth:

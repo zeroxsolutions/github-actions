@@ -8,7 +8,7 @@ once, for everyone.
 
 | Path | Kind | Purpose |
 |---|---|---|
-| `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, restore the nx cache. The one definition of "ready to run nx targets". |
+| `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain, authenticate to a private package scope, install its dependencies, restore the nx cache. The one definition of "ready to run nx targets". |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares **no** environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
 | `turbo-setup/action.yml` | composite action | The same, for a Turborepo workspace: caches `.turbo` instead of `.nx/cache`. |
