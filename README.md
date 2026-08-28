@@ -53,6 +53,22 @@ The consequence worth keeping: **this repository holds no product's credentials
 and cannot**, even by accident. A protected environment name in the caller pauses
 the deploy job there for a reviewer.
 
+## A private package scope
+
+`pnpm install` runs inside the setup action, so a lockfile naming a package the
+public registry does not serve fails there, before any target runs. Both setup
+actions take an `npm-token` and write it to a runner-local `.npmrc`; all four
+workflows read `secrets.NPM_TOKEN` and pass it down. A caller that does not
+forward its secrets resolves that to an empty string, the step is skipped, and a
+workspace with only public dependencies never notices.
+
+A caller with a private dependency therefore needs `secrets: inherit`, including
+on a gate - a called workflow gets an empty `secrets` context otherwise, and the
+failure lands on `pnpm install` rather than anywhere that names a credential.
+
+The token is the caller's, the same way an environment's secrets are: this
+repository names it and never holds it.
+
 ## Ref pinning policy
 
 | Who pins what | To what | Why |

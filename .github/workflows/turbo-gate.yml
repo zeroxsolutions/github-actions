@@ -50,6 +50,8 @@ jobs:
       # tag, so referencing the same moving tag keeps them in lockstep by
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/turbo-setup@v1
+        with:
+          npm-token: ${{ secrets.NPM_TOKEN }}
 
       # @nx/playwright's inferred target runs `playwright test` alone; only its
       # executor, which these workspaces do not use, installs the browsers first.
