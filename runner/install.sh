@@ -30,8 +30,23 @@ mkdir -p "${HOME}/Library/LaunchAgents"
 sed "s|/ABSOLUTE/PATH/TO/runner/run-one-job.sh|${here}/run-one-job.sh|" \
   "${here}/${label}.plist" > "${agent}"
 
-launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "${agent}"
+# `bootstrap` answers "5: Input/output error" when the label is already loaded, which every
+# re-run is. `bootout` can return before launchd has dropped it, so wait for the label to go
+# rather than racing it.
+if launchctl print "gui/$(id -u)/${label}" >/dev/null 2>&1; then
+  launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    launchctl print "gui/$(id -u)/${label}" >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+fi
+
+# Never silent: a bootstrap that fails now says what still holds the label.
+if ! launchctl bootstrap "gui/$(id -u)" "${agent}"; then
+  echo "bootstrap failed, and launchd still holds ${label}:" >&2
+  launchctl print "gui/$(id -u)/${label}" >&2 || true
+  exit 1
+fi
 
 echo
 echo "Installed. The runner is registering now:"
