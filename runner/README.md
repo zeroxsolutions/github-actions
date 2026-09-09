@@ -1,0 +1,67 @@
+# runner
+
+The machine side of `runs-on: self-hosted`. Every workflow here names that label; this is what
+answers it. Nothing in a workflow file changes to adopt it.
+
+A job runs inside a fresh Linux container on the Mac rather than on the Mac. That is the whole
+point: a port a job binds - a dev server, a test database - is the container's, so it cannot
+collide with another job, with a dev checkout on the same machine, or with a leftover process
+from the run before.
+
+`container:` in a workflow is not the mechanism here and cannot be. `actions/runner`'s
+`src/Runner.Worker/ContainerOperationProvider.cs` rejects it twice over: line 49 on any runner
+that is not Linux, and line 548 on a runner already inside a container. The container is the
+runner instead.
+
+## The shape
+
+```
+launchd  -> docker run --rm  -> container up
+                             -> entrypoint registers an ephemeral runner
+                             -> run.sh: "Listening for Jobs"   <- online before any job
+GitHub sends a job           -> it runs in this container
+--ephemeral                  -> the runner deregisters, run.sh returns, the container is removed
+launchd sees the script exit -> docker run --rm  -> a new container, Listening again
+```
+
+One container serves one job. A container is always up and waiting, so GitHub sees an ordinary
+online runner; the ~10-20s between one job ending and the next container registering is queue
+time, not a dropped job.
+
+Two launchd agents on one Mac give two containers and two concurrent jobs, which was unsafe
+before: their ports no longer meet.
+
+## Install, once per Mac
+
+```sh
+./install.sh                        # asks for the PAT, builds the image, registers the agent
+tail -f /tmp/actions-runner.log     # wait for 'Listening for Jobs'
+```
+
+Re-run it after any change here; it rebuilds and restarts rather than duplicating anything.
+
+## Retire that Mac's old runner
+
+The container registers as `self-hosted` and nothing else, which is the label every workflow
+here already asks for. So while the old runner is also registered, both match and GitHub picks
+whichever is idle - jobs keep landing on macOS. Stop it:
+
+```sh
+launchctl bootout gui/$(id -u)/<the existing runner agent label>
+```
+
+Reversible: `launchctl bootstrap` the old plist again. Nothing is deleted.
+
+## What the container is trusted with
+
+A job using testcontainers needs the host's docker socket, so the launcher mounts it. On Docker
+Desktop that socket is `root:root`, which is why the entrypoint puts the runner user in group 0:
+any job that runs here can start containers on the Mac. The grant is wider than the runner
+process, and a workflow from a fork would inherit it.
+
+## The Playwright base image
+
+The tag is the org's baseline, not a per-repository pin. A repository on the same
+`@playwright/test` finds the browsers already in the image; one on another version installs its
+own into `/ms-playwright` at job time and pays a download for that job. Move the tag when most
+repositories have moved.

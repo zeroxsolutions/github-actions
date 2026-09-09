@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zeroxsolutions.actions-runner</string>
+
+  <!-- Replace with the absolute path to run-one-job.sh on this Mac; launchd resolves nothing. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/ABSOLUTE/PATH/TO/runner/run-one-job.sh</string>
+  </array>
+
+  <!-- The whole supervisor: the script exits after one job, and launchd starts it again. -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- `docker` is not on launchd's default PATH, which is /usr/bin:/bin:/usr/sbin:/sbin. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/actions-runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/actions-runner.log</string>
+</dict>
+</plist>
