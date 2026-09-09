@@ -40,6 +40,17 @@ tail -f /tmp/actions-runner.log     # wait for 'Listening for Jobs'
 
 Re-run it after any change here; it rebuilds and restarts rather than duplicating anything.
 
+## Take a Mac back off CI
+
+```sh
+./uninstall.sh              # stops the agent, removes the container, deregisters what is stale
+./uninstall.sh --purge      # the above, plus the image, the cache volumes and the PAT
+```
+
+An ephemeral runner deregisters after a job and not before, so one stopped while idle stays on
+the org as offline; the script removes those. Retiring the container is not enough on its own -
+put that Mac's original runner back, or it takes no jobs at all.
+
 ## Retire that Mac's old runner
 
 The container registers as `self-hosted` and nothing else, which is the label every workflow
