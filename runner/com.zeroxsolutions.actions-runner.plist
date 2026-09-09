@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- A template: install.sh substitutes each __PLACEHOLDER__ and writes one copy per slot. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.zeroxsolutions.actions-runner</string>
+  <string>__LABEL__</string>
 
-  <!-- Replace with the absolute path to run-one-job.sh on this Mac; launchd resolves nothing. -->
+  <!-- The slot number is the argument: it picks that slot's own mise volume. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/ABSOLUTE/PATH/TO/runner/run-one-job.sh</string>
+    <string>__PROGRAM__</string>
+    <string>__SLOT__</string>
   </array>
 
   <!-- The whole supervisor: the script exits after one job, and launchd starts it again. -->
@@ -26,8 +28,8 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/tmp/actions-runner.log</string>
+  <string>__LOG__</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/actions-runner.log</string>
+  <string>__LOG__</string>
 </dict>
 </plist>

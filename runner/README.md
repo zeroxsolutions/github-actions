@@ -24,21 +24,27 @@ GitHub sends a job           -> it runs in this container
 launchd sees the script exit -> docker run --rm  -> a new container, Listening again
 ```
 
-One container serves one job. A container is always up and waiting, so GitHub sees an ordinary
-online runner; the ~10-20s between one job ending and the next container registering is queue
-time, not a dropped job.
+One container serves one job, and a container is always up and waiting, so GitHub sees an
+ordinary online runner; the ~10-20s between one job ending and the next container registering is
+queue time, not a dropped job.
 
-Two launchd agents on one Mac give two containers and two concurrent jobs, which was unsafe
-before: their ports no longer meet.
+So the two figures differ: the number of containers CREATED is the number of jobs, one each,
+never reused; the number alive AT ONCE is the number of slots. Ten jobs against one slot is ten
+containers in sequence, nine of them waiting in GitHub's queue.
 
 ## Install, once per Mac
 
 ```sh
-./install.sh                        # asks for the PAT, builds the image, registers the agent
-tail -f /tmp/actions-runner.log     # wait for 'Listening for Jobs'
+./install.sh                                        # one slot
+./install.sh --slots 4                              # four
+tail -f /tmp/com.zeroxsolutions.actions-runner.*.log     # wait for 'Listening for Jobs'
 ```
 
-Re-run it after any change here; it rebuilds and restarts rather than duplicating anything.
+A slot is one launchd agent, one container, one concurrent job. Re-run with a different count to
+change it: the installer drops every agent it registered before bootstrapping the new set, so
+lowering the count removes the extra ones rather than leaving them running.
+
+How many a Mac takes is its RAM and CPU, not this script. Each slot runs a full gate.
 
 ## Take a Mac back off CI
 
@@ -69,6 +75,13 @@ A job using testcontainers needs the host's docker socket, so the launcher mount
 Desktop that socket is `root:root`, which is why the entrypoint puts the runner user in group 0:
 any job that runs here can start containers on the Mac. The grant is wider than the runner
 process, and a workflow from a fork would inherit it.
+
+## What each slot keeps
+
+The pnpm store is one volume shared by every slot: it is content-addressed and lock-protected,
+which is what lets one store serve many projects at once, and a warm one is tens of gigabytes.
+Each slot gets its own mise volume instead - under 1GB, and two containers installing one tool
+version into one directory is a race with nothing to gain.
 
 ## The Playwright base image
 

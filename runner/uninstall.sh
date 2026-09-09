@@ -1,26 +1,34 @@
 #!/usr/bin/env bash
-# Takes this Mac back off CI: stops the agent, discards the container, and deregisters what the
-# runner left behind. Add `--purge` to also drop the image, the cache volumes and the PAT.
+# Takes this Mac back off CI: stops every agent this installer registered, discards their
+# containers, and deregisters what the runners left behind. Add `--purge` to also drop the image,
+# the cache volumes and the PAT.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-label='com.zeroxsolutions.actions-runner'
-agent="${HOME}/Library/LaunchAgents/${label}.plist"
+prefix='com.zeroxsolutions.actions-runner'
+uid="$(id -u)"
 image="${RUNNER_IMAGE:-zeroxsolutions/actions-runner:latest}"
 purge=false
 [ "${1:-}" = '--purge' ] && purge=true
 
-# First, or launchd starts a replacement container the moment this one is removed.
-launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
-rm -f "${agent}"
-echo "agent stopped"
+# First, and every slot, or launchd starts a replacement container the moment one is removed.
+# `index() == 1` and not a regex: the prefix is full of dots.
+for label in $(launchctl list | awk -v p="${prefix}" 'index($3, p) == 1 { print $3 }'); do
+  launchctl bootout "gui/${uid}/${label}" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    launchctl print "gui/${uid}/${label}" >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+  rm -f "${HOME}/Library/LaunchAgents/${label}.plist"
+  echo "stopped ${label}"
+done
 
 # The daemon owns the container, so killing the `docker run` client leaves it running.
 running=$(docker ps -q --filter "ancestor=${image}" || true)
 if [ -n "${running}" ]; then
   # shellcheck disable=SC2086 -- one id per line, and each is a hex string with no field to split
   docker rm -f ${running} >/dev/null
-  echo "container removed"
+  echo "containers removed"
 fi
 
 # `--ephemeral` deregisters after a job and not before, so a runner stopped while idle stays on
@@ -52,7 +60,11 @@ PY
 fi
 
 if [ "${purge}" = true ]; then
-  docker volume rm actions-runner-pnpm actions-runner-mise >/dev/null 2>&1 || true
+  volumes=$(docker volume ls -q --filter 'name=actions-runner-' || true)
+  if [ -n "${volumes}" ]; then
+    # shellcheck disable=SC2086 -- one name per line, and none carries a field separator
+    docker volume rm ${volumes} >/dev/null 2>&1 || true
+  fi
   docker image rm "${image}" >/dev/null 2>&1 || true
   rm -f "${here}/.env"
   echo "image, volumes and .env removed"
@@ -60,4 +72,4 @@ fi
 
 echo
 echo "This Mac now takes no jobs. To put its original runner back:"
-echo "  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<the old runner agent>.plist"
+echo "  launchctl bootstrap gui/${uid} ~/Library/LaunchAgents/<the old runner agent>.plist"

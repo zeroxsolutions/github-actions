@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
-# Everything the Mac needs, in one run: build the image, take the PAT, register the launchd
-# agent. Idempotent - running it again rebuilds and restarts rather than duplicating anything.
+# Everything the Mac needs, in one run: build the image, take the PAT, and register one launchd
+# agent per slot. Idempotent - running it again rebuilds and re-registers rather than adding.
+#
+# One slot is one container and one concurrent job. Four slots is four containers at once, which
+# is only safe because each has its own network namespace; before that the ports met.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-label='com.zeroxsolutions.actions-runner'
-agent="${HOME}/Library/LaunchAgents/${label}.plist"
+prefix='com.zeroxsolutions.actions-runner'
+uid="$(id -u)"
+slots=1
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --slots) slots="${2:?--slots needs a count}"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+case "${slots}" in
+  '' | *[!0-9]* | 0) echo "--slots takes a positive integer" >&2; exit 1 ;;
+esac
 
 docker info >/dev/null 2>&1 || {
   echo "Docker is not running. Start Docker Desktop and run this again." >&2
@@ -24,33 +38,44 @@ fi
 
 docker build --platform linux/arm64 -t zeroxsolutions/actions-runner:latest "${here}"
 
-# launchd resolves no variable and no relative path, so the absolute one is substituted here
-# rather than left for an editor to get right.
+# Every agent this script has ever registered goes, whatever last run's slot count was - lowering
+# the count must not leave the extra agents running. `index() == 1` and not a regex: the prefix
+# is full of dots.
+#
+# `bootstrap` answers "5: Input/output error" when the label is already loaded, and `bootout` can
+# return before launchd has dropped it, so wait for the label to go rather than racing it.
 mkdir -p "${HOME}/Library/LaunchAgents"
-sed "s|/ABSOLUTE/PATH/TO/runner/run-one-job.sh|${here}/run-one-job.sh|" \
-  "${here}/${label}.plist" > "${agent}"
-
-# `bootstrap` answers "5: Input/output error" when the label is already loaded, which every
-# re-run is. `bootout` can return before launchd has dropped it, so wait for the label to go
-# rather than racing it.
-if launchctl print "gui/$(id -u)/${label}" >/dev/null 2>&1; then
-  launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
+for label in $(launchctl list | awk -v p="${prefix}" 'index($3, p) == 1 { print $3 }'); do
+  launchctl bootout "gui/${uid}/${label}" 2>/dev/null || true
   for _ in $(seq 1 50); do
-    launchctl print "gui/$(id -u)/${label}" >/dev/null 2>&1 || break
+    launchctl print "gui/${uid}/${label}" >/dev/null 2>&1 || break
     sleep 0.2
   done
-fi
+  rm -f "${HOME}/Library/LaunchAgents/${label}.plist"
+done
 
-# Never silent: a bootstrap that fails now says what still holds the label.
-if ! launchctl bootstrap "gui/$(id -u)" "${agent}"; then
-  echo "bootstrap failed, and launchd still holds ${label}:" >&2
-  launchctl print "gui/$(id -u)/${label}" >&2 || true
-  exit 1
-fi
+for slot in $(seq 1 "${slots}"); do
+  label="${prefix}.${slot}"
+  agent="${HOME}/Library/LaunchAgents/${label}.plist"
+  # launchd resolves no variable and no relative path, so the absolute one is substituted here.
+  sed -e "s|__LABEL__|${label}|g" \
+      -e "s|__PROGRAM__|${here}/run-one-job.sh|" \
+      -e "s|__SLOT__|${slot}|" \
+      -e "s|__LOG__|/tmp/${label}.log|g" \
+      "${here}/${prefix}.plist" > "${agent}"
+
+  # Never silent: a bootstrap that fails says what still holds the label.
+  if ! launchctl bootstrap "gui/${uid}" "${agent}"; then
+    echo "bootstrap failed for ${label}, and launchd still holds it:" >&2
+    launchctl print "gui/${uid}/${label}" >&2 || true
+    exit 1
+  fi
+  echo "slot ${slot} registered as ${label}"
+done
 
 echo
-echo "Installed. The runner is registering now:"
-echo "  tail -f /tmp/actions-runner.log     # wait for 'Listening for Jobs'"
+echo "${slots} slot(s) installed - ${slots} container(s), so ${slots} concurrent job(s)."
+echo "  tail -f /tmp/${prefix}.*.log     # wait for 'Listening for Jobs'"
 echo
-echo "Once it is Online, retire this Mac's old runner so jobs stop landing on macOS:"
-echo "  launchctl bootout gui/$(id -u)/<the existing runner agent label>"
+echo "Once they are Online, retire this Mac's old runner so jobs stop landing on macOS:"
+echo "  launchctl bootout gui/${uid}/<the existing runner agent label>"
