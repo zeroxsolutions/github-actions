@@ -9,6 +9,16 @@ set -euo pipefail
 # so no repository in the org changes a line. A new label would have to be adopted by all of them.
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted}"
 
+# Docker creates a named volume's mount point as root when the image has no directory there, so
+# the toolchain cannot write into it: measured 2026-09-09, mise-action died on
+# `EACCES: permission denied, mkdir '/home/runner/.local/share/mise/bin'` before any target ran.
+# The mount points alone need it - everything below them is written by this user.
+for mount in /home/runner/.local/share/mise /home/runner/.local/share/pnpm; do
+  if [ -d "${mount}" ]; then
+    sudo chown runner:runner "${mount}"
+  fi
+done
+
 # A registration token lasts one hour and one registration, so it cannot be a stored value:
 # every container mints its own from the PAT.
 registration_token=$(
