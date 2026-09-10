@@ -90,7 +90,7 @@ jobs:
           echo "mode=$mode"   >> "$GITHUB_OUTPUT"
           echo "base=$base"   >> "$GITHUB_OUTPUT"
 
-      # `timeout` is on no macOS runner - checked on evolit-mac-mini 2026-09-10: no `timeout`,
+      # `timeout` is on no macOS runner - checked on the self-hosted one 2026-09-10: no `timeout`,
       # no `gtimeout`, no coreutils. The kill takes the process GROUP, because a gate's command
       # is a tree and signalling the pid alone leaves the rest holding ports.
       - name: Run the targets under a budget, so an overrun fails rather than reads as cancelled
