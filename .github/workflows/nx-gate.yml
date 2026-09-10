@@ -25,7 +25,7 @@ on:
         default: affected
 
       timeout-minutes:
-        description: 'Minutes before the targets are killed and the step fails. The default clears the slowest gate measured across these repos (18 min, classify, 2026-08-21).'
+        description: 'Minutes before the job is killed; the targets are killed two minutes earlier, so an overrun reports as a failure. The default clears the slowest gate measured across these repos (18 min, classify, 2026-08-21).'
         required: false
         type: number
         default: 30
@@ -38,9 +38,11 @@ jobs:
     # hours. Measured 2026-08-21: a stuck e2e held one for 57 minutes and only
     # stopped because it was cancelled by hand.
     #
-    # Two minutes above the step's own budget, so the step wins the race and names the
-    # overrun; this one stays as the backstop for what it cannot cover, its own setup.
-    timeout-minutes: ${{ inputs.timeout-minutes + 2 }}
+    # The backstop for what the step's own budget cannot cover, its own setup: the step
+    # kills the targets two minutes earlier and names the overrun. That subtraction is
+    # bash's, in the step - a `${{ }}` expression has no arithmetic, and `+ 2` written here
+    # made the whole file unparseable (runs 34441799042 through 34457761385, 2026-09-10).
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       # Pinned literal, not an input: `uses:` admits no expression at step
       # level. The action and this workflow ship from one repository under one
@@ -99,7 +101,8 @@ jobs:
           NX_BASE: ${{ steps.range.outputs.base }}
           NX_HEAD: ${{ github.sha }}
         run: |
-          budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 ))
+          budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 - 120 ))
+          [ "${budget_seconds}" -ge 60 ] || budget_seconds=60
           overrun_marker="${RUNNER_TEMP:-/tmp}/nx-gate-overrun.$$"
           rm -f "${overrun_marker}"
 
