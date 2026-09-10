@@ -3,6 +3,10 @@
 # next job gets a container built from the image again rather than the one just used.
 #
 # The slot number comes from the launchd agent that calls this; it names that slot's own volume.
+#
+# The labels are how install.sh and uninstall.sh find these containers. Not `--filter
+# ancestor=<tag>`: measured 2026-09-10, a container stops matching that the moment the tag is
+# rebuilt, which is the first thing install.sh does.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +24,8 @@ image="${RUNNER_IMAGE:-zeroxsolutions/actions-runner:latest}"
 # that fits on a Mac.
 exec docker run --rm \
   --env-file "${here}/.env" \
+  --label com.zeroxsolutions.actions-runner=1 \
+  --label "com.zeroxsolutions.actions-runner.slot=${slot}" \
   --volume /var/run/docker.sock:/var/run/docker.sock \
   --volume actions-runner-pnpm:/home/runner/.local/share/pnpm \
   --volume "actions-runner-mise-${slot}:/home/runner/.local/share/mise" \
