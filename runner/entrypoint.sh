@@ -19,6 +19,25 @@ for mount in /home/runner/.local/share/mise /home/runner/.local/share/pnpm; do
   fi
 done
 
+# Firefox builds its GL stack through an X display and answers `getContext('webgl2')` with null
+# without one, headless included - measured in this image 2026-09-10: false with no DISPLAY, true
+# with one, on mesa's llvmpipe, no prefs. Chromium carries SwiftShader and needs neither, which is
+# why only firefox failed. Xvfb and mesa are already in the Playwright base image.
+Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+export DISPLAY=:99
+#
+# `if` and not `[ ... ] && break`: under `set -e` that list is the loop body's last command, so
+# the first miss would exit this script rather than wait for the socket.
+for _ in $(seq 1 50); do
+  if [ -S /tmp/.X11-unix/X99 ]; then
+    break
+  fi
+  sleep 0.2
+done
+if [ ! -S /tmp/.X11-unix/X99 ]; then
+  echo 'Xvfb did not come up; any browser needing WebGL will fail in this job' >&2
+fi
+
 # A registration token lasts one hour and one registration, so it cannot be a stored value:
 # every container mints its own from the PAT.
 registration_token=$(
