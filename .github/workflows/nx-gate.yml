@@ -25,7 +25,7 @@ on:
         default: affected
 
       timeout-minutes:
-        description: 'Minutes before the job is killed. The default clears the slowest gate measured across these repos (18 min, classify, 2026-08-21).'
+        description: 'Minutes before the targets are killed and the step fails. The default clears the slowest gate measured across these repos (18 min, classify, 2026-08-21).'
         required: false
         type: number
         default: 30
@@ -37,7 +37,11 @@ jobs:
     # one job at a time - so a hung job holds a runner out of the pool for six
     # hours. Measured 2026-08-21: a stuck e2e held one for 57 minutes and only
     # stopped because it was cancelled by hand.
-    timeout-minutes: ${{ inputs.timeout-minutes }}
+    #
+    # Two minutes above the step's own budget, so the step always wins the race and
+    # reports the overrun as a FAILURE. This job-level kill is the backstop for what
+    # the step cannot cover - its own setup - and it still lands as `cancelled`.
+    timeout-minutes: ${{ inputs.timeout-minutes + 2 }}
     steps:
       # Pinned literal, not an input: `uses:` admits no expression at step
       # level. The action and this workflow ship from one repository under one
@@ -87,14 +91,60 @@ jobs:
           echo "mode=$mode"   >> "$GITHUB_OUTPUT"
           echo "base=$base"   >> "$GITHUB_OUTPUT"
 
+      # A budget the targets cannot outlive, so an overrun is this step's own FAILURE with a
+      # reason in the log. A `timeout-minutes` kill lands as `cancelled`, which is the word a
+      # human pressing cancel and a superseding `cancel-in-progress` also produce - so a gate
+      # that never finished reads as a gate nobody wanted. Measured in zeroxsolutions/travel,
+      # 2026-09-09: of three e2e jobs reported `cancelled`, one was the budget, one was
+      # superseded, and one is still unexplained.
+      #
+      # bash's own watchdog, because `timeout` is not on a macOS runner - checked on
+      # evolit-mac-mini 2026-09-10: no `timeout`, no `gtimeout`, no coreutils.
+      #
+      # Job control gives each background job a process group of its own, and the kill takes the
+      # GROUP. A gate's command is a tree - pnpm, nx, its daemon, a dev server a test started -
+      # and signalling the pid alone leaves the rest holding ports: an orphaned workerd held 8787
+      # on this runner for two days and hung every e2e job that followed
+      # (zeroxsolutions/travel#112).
       - name: Run the targets
         shell: bash
         env:
           NX_BASE: ${{ steps.range.outputs.base }}
           NX_HEAD: ${{ github.sha }}
         run: |
+          budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 ))
+          overrun_marker="${RUNNER_TEMP:-/tmp}/nx-gate-overrun.$$"
+          rm -f "${overrun_marker}"
+
+          set -m
           if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
-            pnpm nx affected -t ${{ inputs.targets }}
+            pnpm nx affected -t ${{ inputs.targets }} &
           else
-            pnpm nx run-many -t ${{ inputs.targets }}
+            pnpm nx run-many -t ${{ inputs.targets }} &
           fi
+          command_pid=$!
+          set +m
+
+          set -m
+          (
+            sleep "${budget_seconds}"
+            : > "${overrun_marker}"
+            kill -TERM -"${command_pid}" 2>/dev/null || kill -TERM "${command_pid}" 2>/dev/null
+          ) &
+          watchdog_pid=$!
+          set +m
+
+          command_status=0
+          wait "${command_pid}" || command_status=$?
+
+          # The group: the watchdog's own `sleep` is a child, and killing the subshell alone
+          # leaves it to run out the budget.
+          kill -TERM -"${watchdog_pid}" 2>/dev/null || true
+          wait "${watchdog_pid}" 2>/dev/null || true
+
+          if [ -e "${overrun_marker}" ]; then
+            rm -f "${overrun_marker}"
+            echo "::error title=Gate budget exceeded::The targets did not finish within ${budget_seconds}s and were killed. This is a budget kill, not a cancellation."
+            exit 1
+          fi
+          exit "${command_status}"
