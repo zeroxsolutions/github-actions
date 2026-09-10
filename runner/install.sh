@@ -54,6 +54,18 @@ for label in $(launchctl list | awk -v p="${prefix}" 'index($3, p) == 1 { print 
   rm -f "${HOME}/Library/LaunchAgents/${label}.plist"
 done
 
+# The daemon owns the container, so booting an agent out leaves its container running, still
+# registered, and still taking jobs - from the image built before this run, which is the image
+# this run exists to replace. `rm -f` and not a drain: PID 1 is `sg ... -c ./run.sh`, sg forwards
+# no signal, so `docker stop` waits out its whole timeout and kills anyway (measured 2026-09-10).
+# A job in flight therefore fails, loudly, where one served from the previous image fails silently.
+stale=$(docker ps -aq --filter "label=${prefix}" || true)
+if [ -n "${stale}" ]; then
+  # shellcheck disable=SC2086 -- one id per line, and each is a hex string with no field to split
+  docker rm -f ${stale} >/dev/null
+  echo "removed $(printf '%s\n' ${stale} | wc -l | tr -d ' ') container(s) the old agents left"
+fi
+
 for slot in $(seq 1 "${slots}"); do
   label="${prefix}.${slot}"
   agent="${HOME}/Library/LaunchAgents/${label}.plist"

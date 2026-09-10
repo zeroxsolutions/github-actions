@@ -23,8 +23,10 @@ for label in $(launchctl list | awk -v p="${prefix}" 'index($3, p) == 1 { print 
   echo "stopped ${label}"
 done
 
-# The daemon owns the container, so killing the `docker run` client leaves it running.
-running=$(docker ps -q --filter "ancestor=${image}" || true)
+# The daemon owns the container, so killing the `docker run` client leaves it running. Found by
+# LABEL: measured 2026-09-10, `--filter ancestor=<tag>` stops matching a running container the
+# moment that tag is rebuilt, so it finds nothing after any reinstall.
+running=$(docker ps -aq --filter "label=${prefix}" || true)
 if [ -n "${running}" ]; then
   # shellcheck disable=SC2086 -- one id per line, and each is a hex string with no field to split
   docker rm -f ${running} >/dev/null
