@@ -51,11 +51,10 @@ jobs:
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/turbo-setup@v1
 
-      # @nx/playwright's inferred target runs `playwright test` alone; only its
-      # executor, which these workspaces do not use, installs the browsers first.
-      # Some repos pass `targets: e2e` without depending on playwright at all.
+      # Nothing that launches a browser installs it: neither `playwright test` nor the
+      # vitest browser provider does. A caller's `test` target can be what launches one,
+      # not only its `e2e` target.
       - name: Install Playwright browsers
-        if: ${{ contains(inputs.targets, 'e2e') }}
         shell: bash
         run: |
           [ -e node_modules/@playwright/test ] || {
