@@ -51,11 +51,20 @@ jobs:
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/turbo-setup@v1
 
-      # @nx/playwright's inferred target runs `playwright test` alone; only its
-      # executor, which these workspaces do not use, installs the browsers first.
-      # Some repos pass `targets: e2e` without depending on playwright at all.
+      # Nothing installs the browsers on its own: `playwright test` and the vitest
+      # browser provider both launch a browser they expect to already be there.
+      #
+      # Unconditional on the target list. It read `contains(inputs.targets, 'e2e')`,
+      # which assumes a browser is only ever wanted by a target named e2e - vitest
+      # browser mode runs through the playwright provider inside a project's own
+      # `test` target, and a gate passing `lint typecheck build test` then failed with
+      # "Executable doesn't exist at .../ms-playwright/..." (zeroxsolutions/travel run
+      # 34733877754, 2026-09-13, on the nx gate this file mirrors). Which target needs
+      # a browser is a property of the workspace, not of the target's name.
+      #
+      # The check below is what keeps that cheap: a repo with no playwright pays one
+      # `test -e`, and some repos do pass `targets: e2e` without depending on it.
       - name: Install Playwright browsers
-        if: ${{ contains(inputs.targets, 'e2e') }}
         shell: bash
         run: |
           [ -e node_modules/@playwright/test ] || {
