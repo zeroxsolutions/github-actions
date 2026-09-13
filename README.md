@@ -14,7 +14,10 @@ once, for everyone.
 | `turbo-setup/action.yml` | composite action | The same, for a Turborepo workspace: caches `.turbo` instead of `.nx/cache`. |
 | `.github/workflows/turbo-gate.yml` | reusable workflow | Run turbo tasks. Declares **no** environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/turbo-deploy.yml` | reusable workflow | Run turbo deploy tasks inside a named environment. |
-| `runner/` | machine setup | The self-hosted runner itself: one ephemeral Linux container per job, on each Mac. Answers the `self-hosted` label every workflow above names. |
+
+Every workflow here names `runs-on: self-hosted`. What answers that label is
+registered on each machine and lives outside this repository; nothing here
+provisions a runner.
 
 **Pick the pair that matches the caller's task runner.** The two sets are
 structurally identical and deliberately kept so: same inputs, same self-hosted

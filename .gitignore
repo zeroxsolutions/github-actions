@@ -1,5 +1,5 @@
 # macOS
 .DS_Store
 
-# The installer writes runner/.env, which holds the PAT.
+# Not written by anything here; kept so a local one cannot be committed.
 .env
