@@ -48,51 +48,67 @@ versions.
 ## What the machine supplies
 
 A job lands on whichever runner holding the `self-hosted` label is idle, so each
-of them has to be able to run every caller's gate. The setup actions install the
-toolchain through mise and put it on `PATH` for that job alone, and the gates
-install the browsers. Outside a job the machine has no node and no pnpm, so
-nothing below runs through them. A machine missing either of these fails inside a
-caller's `test` target, not in setup:
+of them has to be able to run every caller's gate. Setup puts node and pnpm on
+`PATH` for the job alone, so everything below runs on the machine with nothing
+but a shell. A machine missing either of these fails inside a caller's `test`
+target, not in setup:
 
 | Missing on the machine | What the gate reports |
 |---|---|
 | On Linux, the system libraries Playwright's browsers link against | `browserType.launch: Host system is missing dependencies to run browsers` |
 | For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
 
-**The browser step stays green over the first.** `playwright install` fetches
-browsers only, and prints the missing libraries as a warning. Its first
-suggestion, `playwright install-deps`, needs the pnpm the machine does not have;
-the packages it lists after `Alternatively, use apt:` are the ones for that
-Playwright version on that distribution. Install those on the machine with
-`sudo apt-get install`. The warning stops at the first browser missing anything,
-so the next gate can list new packages for the next browser rather than repeat
-the first list; install again until the step prints no warning. Playwright looks
-for these libraries on Linux and never on macOS (playwright-core 1.62.1,
-`_validateHostRequirements`), so a Mac runner needs none.
+### Browser libraries
 
-**The second names no reason.** testcontainers logs why each way of reaching a
-daemon failed at debug level only (testcontainers 12.1.0,
-`getContainerRuntimeClient`), so the gate's log stops at that one line. Ask the
-machine instead:
+Every package two gate runs asked for, on Ubuntu 26.04 arm64 with playwright-core
+1.62.1. A Mac runner needs none: Playwright checks for them on Linux only.
 
 ```bash
-pid=$(pgrep -f 'bin/Runner.Listener' | head -1)
-ps -o user= -p "$pid"             # the user the runner runs as
-ls -l /var/run/docker.sock        # the socket, and the group that owns it
-grep Groups /proc/"$pid"/status   # must carry that group's gid
-getent group docker
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+  libcairo-gobject2 libcairo2 libcups2t64 libgbm1 libgdk-pixbuf-2.0-0 \
+  libgtk-3-0t64 libpango-1.0-0 libpangocairo-1.0-0 libxcomposite1 libxcursor1 \
+  libxdamage1 libxfixes3 libxrandr2
 ```
 
-With no socket at that path the daemon listens elsewhere (rootless, snap): put
-`DOCKER_HOST` in the `.env` file of the runner's install directory, which the
-runner reads when it starts. With the socket present and its gid missing from
-`Groups`, grant the group. A group granted with `usermod` reaches only a process
-started after it, so a runner already running keeps failing until its service
-restarts:
+The gate's `Install Playwright browsers` step stays green while any are missing,
+and prints a warning instead. That warning stops at the first browser missing
+something, so a later run can name packages this list lacks: install the ones it
+lists after `Alternatively, use apt:`, and repeat until the step prints nothing.
+
+### Docker access
+
+testcontainers gives no reason beyond that one line (testcontainers 12.1.0), so
+check the machine. The runner's install directory below is the default one:
 
 ```bash
-sudo usermod -aG docker <the user printed above>
-sudo ./svc.sh stop && sudo ./svc.sh start   # from the runner's install directory
+cd /home/runner/actions-runner
+pid=$(pgrep -f Runner.Listener | head -1)
+user=$(ps -o user= -p "$pid")
+echo "runner user: $user"
+ls -l /var/run/docker.sock                  # the socket and the group that owns it
+getent group docker                         # that group's gid
+grep Groups /proc/"$pid"/status             # the runner process must list that gid
+```
+
+No socket at `/var/run/docker.sock` usually means a rootless daemon, whose socket
+sits under the user's runtime directory. Point the runner at it through `.env`,
+which the runner reads when it starts (same shell as the check above):
+
+```bash
+echo "DOCKER_HOST=unix:///run/user/$(id -u "$user")/docker.sock" | sudo tee -a .env
+sudo ./svc.sh stop && sudo ./svc.sh start
+```
+
+A socket present but its gid missing from `Groups` means the runner is not in
+the group, or joined it after it started - a group reaches only a process started
+after it. Same shell as the check above:
+
+```bash
+sudo usermod -aG docker "$user"
+sudo ./svc.sh stop && sudo ./svc.sh start
+grep Groups /proc/"$(pgrep -f Runner.Listener | head -1)"/status   # now lists the gid
 ```
 
 ## Environments belong to the caller
