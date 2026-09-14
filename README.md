@@ -45,6 +45,46 @@ An Nx product has no such constraint and should keep `packageManager` out of its
 manifest: the field self-switches, which gives different machines different pnpm
 versions.
 
+## What the machine supplies
+
+A job lands on whichever runner holding the `self-hosted` label is idle, so each
+of them has to be able to run every caller's gate. The setup actions install the
+toolchain and the gates install the browsers; the machine supplies the rest. A
+machine missing it fails inside a caller's `test` target, not in setup:
+
+| Missing on the machine | What the gate reports |
+|---|---|
+| On Linux, the system libraries Playwright's browsers link against | `browserType.launch: Host system is missing dependencies to run browsers` |
+| For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
+
+**The browser step stays green over the first.** `playwright install` fetches
+browsers only, and reports the missing libraries as a warning. Playwright checks
+for them on Linux and never on macOS (playwright-core 1.62.1,
+`_validateHostRequirements`), so a Mac runner needs no libraries. Install them
+once, on the machine, with the Playwright version the caller pins. It runs `apt-get`
+through `sudo` by itself, so leave `sudo` off the front: Ubuntu's default
+`secure_path` resets `PATH` under it, and `pnpm` is no longer found:
+
+```bash
+pnpm exec playwright install-deps   # from a checkout of the caller
+```
+
+Read its output, not its exit code: a Playwright that does not know the machine's
+distribution prints `Cannot install dependencies for <platform>` and exits 0
+having installed nothing (`installDependenciesLinux`, same version).
+
+**The second names no reason.** testcontainers tries each way of reaching a
+daemon and logs why each one failed at debug level only (testcontainers 12.1.0,
+`getContainerRuntimeClient`). Run a suite that starts a container as the user the
+runner runs as, with `DEBUG='testcontainers*'`, to see which. A group granted
+with `usermod` reaches only a process started after it, so a runner already
+running keeps failing until its service restarts:
+
+```bash
+sudo usermod -aG docker <the user the runner service runs as>
+sudo ./svc.sh stop && sudo ./svc.sh start   # from the runner's install directory
+```
+
 ## Environments belong to the caller
 
 `nx-deploy` declares its environment from an input, and that environment resolves
