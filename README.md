@@ -49,8 +49,10 @@ versions.
 
 A job lands on whichever runner holding the `self-hosted` label is idle, so each
 of them has to be able to run every caller's gate. The setup actions install the
-toolchain and the gates install the browsers; the machine supplies the rest. A
-machine missing it fails inside a caller's `test` target, not in setup:
+toolchain through mise and put it on `PATH` for that job alone, and the gates
+install the browsers. Outside a job the machine has no node and no pnpm, so
+nothing below runs through them. A machine missing either of these fails inside a
+caller's `test` target, not in setup:
 
 | Missing on the machine | What the gate reports |
 |---|---|
@@ -58,30 +60,38 @@ machine missing it fails inside a caller's `test` target, not in setup:
 | For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
 
 **The browser step stays green over the first.** `playwright install` fetches
-browsers only, and reports the missing libraries as a warning. Playwright checks
-for them on Linux and never on macOS (playwright-core 1.62.1,
-`_validateHostRequirements`), so a Mac runner needs no libraries. Install them
-once, on the machine, with the Playwright version the caller pins. It runs `apt-get`
-through `sudo` by itself, so leave `sudo` off the front: Ubuntu's default
-`secure_path` resets `PATH` under it, and `pnpm` is no longer found:
+browsers only, and prints the missing libraries as a warning. Its first
+suggestion, `playwright install-deps`, needs the pnpm the machine does not have;
+the packages it lists after `Alternatively, use apt:` are the ones for that
+Playwright version on that distribution. Install those on the machine with
+`sudo apt-get install`. The warning stops at the first browser missing anything,
+so the next gate can list new packages for the next browser rather than repeat
+the first list; install again until the step prints no warning. Playwright looks
+for these libraries on Linux and never on macOS (playwright-core 1.62.1,
+`_validateHostRequirements`), so a Mac runner needs none.
+
+**The second names no reason.** testcontainers logs why each way of reaching a
+daemon failed at debug level only (testcontainers 12.1.0,
+`getContainerRuntimeClient`), so the gate's log stops at that one line. Ask the
+machine instead:
 
 ```bash
-pnpm exec playwright install-deps   # from a checkout of the caller
+pid=$(pgrep -f 'bin/Runner.Listener' | head -1)
+ps -o user= -p "$pid"             # the user the runner runs as
+ls -l /var/run/docker.sock        # the socket, and the group that owns it
+grep Groups /proc/"$pid"/status   # must carry that group's gid
+getent group docker
 ```
 
-Read its output, not its exit code: a Playwright that does not know the machine's
-distribution prints `Cannot install dependencies for <platform>` and exits 0
-having installed nothing (`installDependenciesLinux`, same version).
-
-**The second names no reason.** testcontainers tries each way of reaching a
-daemon and logs why each one failed at debug level only (testcontainers 12.1.0,
-`getContainerRuntimeClient`). Run a suite that starts a container as the user the
-runner runs as, with `DEBUG='testcontainers*'`, to see which. A group granted
-with `usermod` reaches only a process started after it, so a runner already
-running keeps failing until its service restarts:
+With no socket at that path the daemon listens elsewhere (rootless, snap): put
+`DOCKER_HOST` in the `.env` file of the runner's install directory, which the
+runner reads when it starts. With the socket present and its gid missing from
+`Groups`, grant the group. A group granted with `usermod` reaches only a process
+started after it, so a runner already running keeps failing until its service
+restarts:
 
 ```bash
-sudo usermod -aG docker <the user the runner service runs as>
+sudo usermod -aG docker <the user printed above>
 sudo ./svc.sh stop && sudo ./svc.sh start   # from the runner's install directory
 ```
 
