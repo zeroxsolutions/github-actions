@@ -50,8 +50,8 @@ versions.
 A job lands on whichever runner holding the `self-hosted` label is idle, so each
 of them has to be able to run every caller's gate. Setup puts node and pnpm on
 `PATH` for the job alone, so everything below runs on the machine with nothing
-but a shell. A machine missing either of these fails inside a caller's `test`
-target, not in setup:
+but a shell. A machine missing either of these fails inside whichever caller
+target starts a browser or a container, not in setup:
 
 | Missing on the machine | What the gate reports |
 |---|---|
@@ -60,22 +60,48 @@ target, not in setup:
 
 ### Browser libraries
 
-Every package two gate runs asked for, on Ubuntu 26.04 arm64 with playwright-core
-1.62.1. A Mac runner needs none: Playwright checks for them on Linux only.
+Every package `playwright install-deps` names for Chromium, Firefox and WebKit on
+Ubuntu 26.04 arm64 with playwright-core 1.62.1, plus `libgraphene-1.0-0`,
+`libvulkan1` and `libwebpmux3`, which WebKit loads and Playwright's table has no
+package for. A caller's Playwright config picks the browsers it runs, so each
+machine carries all three. A Mac runner needs none, because Playwright checks for
+them on Linux only.
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-  libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
-  libcairo-gobject2 libcairo2 libcups2t64 libgbm1 libgdk-pixbuf-2.0-0 \
-  libgtk-3-0t64 libpango-1.0-0 libpangocairo-1.0-0 libxcomposite1 libxcursor1 \
-  libxdamage1 libxfixes3 libxrandr2
+  gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
+  libatomic1 libatspi2.0-0t64 libavcodec62 libavif16 libcairo-gobject2 libcairo2 \
+  libcups2t64 libdbus-1-3 libdrm2 libenchant-2-2 libepoxy0 libevent-2.1-7t64 \
+  libflite1 libfontconfig1 libfreetype6 libgbm1 libgdk-pixbuf-2.0-0 libgles2 \
+  libglib2.0-0t64 libgraphene-1.0-0 libgstreamer-gl1.0-0 \
+  libgstreamer-plugins-bad1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
+  libgtk-3-0t64 libgtk-4-1 libharfbuzz-icu0 libharfbuzz0b libhyphen0 libicu78 \
+  libjpeg-turbo8 liblcms2-2 libmanette-0.2-0 libnspr4 libnss3 libopus0 \
+  libpango-1.0-0 libpangocairo-1.0-0 libpng16-16t64 libsecret-1-0 libvpx12 \
+  libvulkan1 libwayland-client0 libwayland-egl1 libwayland-server0 libwebp7 \
+  libwebpdemux2 libwebpmux3 libwoff1 libx11-6 libx11-xcb1 libx264-165 libxcb-shm0 \
+  libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 \
+  libxkbcommon0 libxml2-16 libxrandr2 libxrender1 libxslt1.1
 ```
 
 The gate's `Install Playwright browsers` step stays green while any are missing,
 and prints a warning instead. That warning stops at the first browser missing
-something, so a later run can name packages this list lacks: install the ones it
-lists after `Alternatively, use apt:`, and repeat until the step prints nothing.
+something, so after a playwright-core upgrade, repeat until the step prints
+nothing.
+
+The message takes one of two shapes, in that step and in the test that fails. When
+every missing library has a package in Playwright's table, it lists the packages
+after `Alternatively, use apt:`. When even one has none, it drops that line and
+lists every missing library under `Missing libraries:` instead. Resolve those names
+on the machine:
+
+```bash
+sudo apt-get install -y apt-file && sudo apt-file update   # once
+ldconfig -p | grep -F libvulkan.so.1                       # prints nothing while it is missing
+apt-file search libvulkan.so.1                             # names the package that ships it
+```
 
 ### Docker access
 
