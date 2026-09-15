@@ -130,6 +130,42 @@ sudo ./svc.sh stop && sudo ./svc.sh start
 grep Groups /proc/"$(pgrep -f Runner.Listener | head -1)"/status   # now lists the gid
 ```
 
+### Memory
+
+nx runs three tasks at once by default (nx 23.1.0), vitest starts one worker per
+vCPU minus one, and each worker of a suite that starts containers holds its own
+Postgres container. So a gate's peak grows with the machine's vCPUs and with its
+three heaviest tasks, not with the number of projects. Another project makes the
+gate longer and leaves the peak where it was.
+
+travel's gate on 2026-09-15, run with `VITEST_MAX_WORKERS=3` as on a 4-vCPU machine
+and sampled about every two seconds, peaked at about 3.4 GB of processes plus 0.4 GB across
+ten Postgres containers. The OS, dockerd and the runner add roughly 1 GB more, and
+a 4 GB machine ran out of memory.
+
+| Machine | Fits |
+|---|---|
+| 4 vCPU, 8 GB | travel's gate today, with about 3 GB spare |
+| 4 vCPU, 16 GB | Recommended. Room for another Next app, or another package whose tests start containers |
+| 8 vCPU, 16 to 24 GB | a faster gate; vitest doubles its workers with the vCPUs, so memory grows with them |
+
+Give the machine 50 GB of disk for images, the pnpm store and the browsers, and
+4 GB of swap, so a gate short of memory slows down instead of being killed (not yet
+run on a runner here):
+
+```bash
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+To see how close a machine runs, watch it during a gate, and check after one:
+
+```bash
+free -m -s 5
+journalctl -k | grep -i 'out of memory'
+```
+
 ## Environments belong to the caller
 
 `nx-deploy` declares its environment from an input, and that environment resolves
