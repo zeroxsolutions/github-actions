@@ -68,17 +68,34 @@ with it any job on the machine can run as root. Once every package is installed,
 upgrade names a new package.
 
 A freshly installed machine lacked 308 of those packages on 2026-09-15, so its
-first gate calls sudo, and a reinstalled machine needs the rule again. The rule
-has to name the user the runner service runs as, so the commands read that user
-from the running process.
+first gate calls sudo, and a reinstalled machine needs the rule again. Check it on
+the machine:
 
 ```bash
 pid=$(pgrep -f Runner.Listener | head -1)
-user=$(ps -o user= -p "$pid")
+user=$(ps -o user= -p "$pid")               # the user the runner service runs as; the rule names it
+echo "runner user: $user"
+sudo -u "$user" sudo -n true && echo 'passwordless sudo works'   # "a password is required" means no rule
+```
+
+Write the rule, in the same shell as the check above:
+
+```bash
 echo "$user ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/actions-runner
 sudo chmod 0440 /etc/sudoers.d/actions-runner
 sudo visudo -cf /etc/sudoers.d/actions-runner
 sudo -u "$user" sudo -n true && echo 'passwordless sudo works'
+```
+
+Then rerun only the failed job, from any machine with `gh`. A rerun lands on
+whichever runner is idle, so once the job starts, check that its line names the
+machine you fixed:
+
+```bash
+repo=zeroxsolutions/travel                  # the caller whose gate failed
+run=$(gh run list --repo "$repo" --status failure --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run rerun "$run" --repo "$repo" --failed
+gh api "repos/$repo/actions/runs/$run/jobs" --jq '.jobs[] | "\(.name) \(.status) \(.runner_name)"'
 ```
 
 ### Libraries with no package in Playwright's table
