@@ -53,6 +53,17 @@ jobs:
       # Nothing that launches a browser installs it: neither `playwright test` nor the
       # vitest browser provider does. A caller's `test` target can be what launches one,
       # not only its `e2e` target.
+      #
+      # The system libraries come from the caller's own Playwright, so its upgrade brings its
+      # own list. On Linux `install-deps` runs apt-get through sudo, which fails without a
+      # passwordless sudo for the runner user. `--dry-run` exits 0 once every package in
+      # Playwright's table is present, so a provisioned machine never reaches sudo, and on
+      # macOS both commands do nothing.
+      #
+      # That table can lack a package for a library a browser loads (1.62.1 on Ubuntu 26.04
+      # has none for three of WebKit's), and only `playwright install` checks the libraries
+      # themselves. Its warning becomes an annotation rather than a failure, because a caller
+      # that never starts the browser concerned passes.
       - name: Install Playwright browsers
         shell: bash
         run: |
@@ -60,7 +71,12 @@ jobs:
             echo 'no playwright in this workspace; nothing to install'
             exit 0
           }
-          pnpm exec playwright install
+          pnpm exec playwright install-deps --dry-run || pnpm exec playwright install-deps
+          install_log="${RUNNER_TEMP:-/tmp}/playwright-install.log"
+          pnpm exec playwright install 2>&1 | tee "${install_log}"
+          if grep -q 'Host system is missing dependencies' "${install_log}"; then
+            echo '::warning title=Browser libraries missing::A library a Playwright browser loads is not on this machine, and Playwright names no package for it. The list is in this step'"'"'s log; a test starting that browser fails.'
+          fi
 
       # A push that creates a branch reports an all-zero "before" commit, and a
       # shallow-cloned default branch may not be present to diff against. Rather

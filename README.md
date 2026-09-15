@@ -49,53 +49,46 @@ versions.
 
 A job lands on whichever runner holding the `self-hosted` label is idle, so each
 of them has to be able to run every caller's gate. Setup puts node and pnpm on
-`PATH` for the job alone, so everything below runs on the machine with nothing
-but a shell. A machine missing either of these fails inside whichever caller
-target starts a browser or a container, not in setup:
+`PATH` for the job alone, so every command below runs on the machine with nothing
+but a shell.
+
+The gates install Playwright's browsers and, on Linux, every system package
+Playwright's own table names for them, so a Playwright upgrade in a caller brings
+its libraries with it. The machine supplies the rest:
 
 | Missing on the machine | What the gate reports |
 |---|---|
-| On Linux, the system libraries Playwright's browsers link against | `browserType.launch: Host system is missing dependencies to run browsers` |
+| On Linux, passwordless sudo for the runner user, while any package is still missing | `Install Playwright browsers` fails inside `playwright install-deps` |
+| A library Playwright's table has no package for | a `Browser libraries missing` annotation, and `Missing libraries:` in that step's log |
 | For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
 
-### Browser libraries
+### Passwordless sudo
 
-Every package `playwright install-deps` names for Chromium, Firefox and WebKit on
-Ubuntu 26.04 arm64 with playwright-core 1.62.1, plus `libgraphene-1.0-0`,
-`libvulkan1` and `libwebpmux3`, which WebKit loads and Playwright's table has no
-package for. A caller's Playwright config picks the browsers it runs, so each
-machine carries all three. A Mac runner needs none, because Playwright checks for
-them on Linux only.
+`playwright install-deps` runs `sudo -- sh -c "apt-get ..."`, so a rule limited to
+`apt-get` does not match it, and any job on the machine can run as root. Once
+every package is in, `--dry-run` passes and the step stops calling sudo, until a
+caller's Playwright upgrade names a new package.
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
-  gstreamer1.0-plugins-good libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
-  libatomic1 libatspi2.0-0t64 libavcodec62 libavif16 libcairo-gobject2 libcairo2 \
-  libcups2t64 libdbus-1-3 libdrm2 libenchant-2-2 libepoxy0 libevent-2.1-7t64 \
-  libflite1 libfontconfig1 libfreetype6 libgbm1 libgdk-pixbuf-2.0-0 libgles2 \
-  libglib2.0-0t64 libgraphene-1.0-0 libgstreamer-gl1.0-0 \
-  libgstreamer-plugins-bad1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
-  libgtk-3-0t64 libgtk-4-1 libharfbuzz-icu0 libharfbuzz0b libhyphen0 libicu78 \
-  libjpeg-turbo8 liblcms2-2 libmanette-0.2-0 libnspr4 libnss3 libopus0 \
-  libpango-1.0-0 libpangocairo-1.0-0 libpng16-16t64 libsecret-1-0 libvpx12 \
-  libvulkan1 libwayland-client0 libwayland-egl1 libwayland-server0 libwebp7 \
-  libwebpdemux2 libwebpmux3 libwoff1 libx11-6 libx11-xcb1 libx264-165 libxcb-shm0 \
-  libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 \
-  libxkbcommon0 libxml2-16 libxrandr2 libxrender1 libxslt1.1
+pid=$(pgrep -f Runner.Listener | head -1)
+user=$(ps -o user= -p "$pid")
+echo "$user ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/actions-runner
+sudo chmod 0440 /etc/sudoers.d/actions-runner
+sudo visudo -cf /etc/sudoers.d/actions-runner
+sudo -u "$user" sudo -n true && echo 'passwordless sudo works'
 ```
 
-The gate's `Install Playwright browsers` step stays green while any are missing,
-and prints a warning instead. That warning stops at the first browser missing
-something, so after a playwright-core upgrade, repeat until the step prints
-nothing.
+### Libraries with no package in Playwright's table
 
-The message takes one of two shapes, in that step and in the test that fails. When
-every missing library has a package in Playwright's table, it lists the packages
-after `Alternatively, use apt:`. When even one has none, it drops that line and
-lists every missing library under `Missing libraries:` instead. Resolve those names
-on the machine:
+When the table has no package for a missing library, the step's warning lists the
+library name instead. On Ubuntu 26.04 arm64, playwright-core 1.62.1 has no package
+for three that WebKit loads:
+
+```bash
+sudo apt-get install -y --no-install-recommends libgraphene-1.0-0 libvulkan1 libwebpmux3
+```
+
+For any other name the warning lists, find the package on the machine:
 
 ```bash
 sudo apt-get install -y apt-file && sudo apt-file update   # once
