@@ -55,7 +55,7 @@ the packages the new version names. The machine supplies the rest:
 
 | Missing on the machine | What the gate reports |
 |---|---|
-| On Linux, passwordless sudo for the runner user, while any package is still missing | `Install Playwright browsers` fails inside `playwright install-deps` |
+| On Linux, passwordless sudo for the runner user, while any package is still missing | `sudo: A terminal is required to authenticate` in `Install Playwright browsers` |
 | A library Playwright's table has no package for | a `Browser libraries missing` annotation, and `Missing libraries:` in that step's log |
 | For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
 
@@ -66,6 +66,11 @@ limited to `apt-get` does not match it. The rule below allows every command, and
 with it any job on the machine can run as root. Once every package is installed,
 `--dry-run` passes and the step stops calling sudo until a caller's Playwright
 upgrade names a new package.
+
+A freshly installed machine lacked 308 of those packages on 2026-09-15, so its
+first gate calls sudo, and a reinstalled machine needs the rule again. The rule
+has to name the user the runner service runs as, so the commands read that user
+from the running process.
 
 ```bash
 pid=$(pgrep -f Runner.Listener | head -1)
@@ -128,43 +133,6 @@ in the same shell as the check above:
 sudo usermod -aG docker "$user"
 sudo ./svc.sh stop && sudo ./svc.sh start
 grep Groups /proc/"$(pgrep -f Runner.Listener | head -1)"/status   # now lists the gid
-```
-
-### Memory
-
-nx runs three tasks at once by default (nx 23.1.0), vitest starts one worker per
-vCPU minus one, and each worker of a suite that starts containers holds its own
-Postgres container. So a gate's peak grows with the machine's vCPUs and with its
-three heaviest tasks, not with the number of projects. Another project makes the
-gate longer and leaves the peak where it was.
-
-On 2026-09-15 travel's gate ran with `VITEST_MAX_WORKERS=3`, the worker count of a
-4-vCPU machine, and was sampled about every two seconds. It peaked at about 3.4 GB
-in processes plus 0.4 GB across ten Postgres containers. The OS, dockerd and the
-runner add roughly 1 GB more, and a 4 GB machine ran out of memory.
-
-| Machine | Fits |
-|---|---|
-| 4 vCPU, 8 GB | travel's gate today, with about 3 GB spare |
-| 4 vCPU, 16 GB | Recommended. It leaves room for another Next app, or another package whose tests start containers |
-| 8 vCPU, 16 to 24 GB | A faster gate. vitest runs seven workers instead of three, and memory grows with them |
-
-Give the machine 50 GB of disk for docker images, the pnpm store and the
-browsers. Add 4 GB of swap, so a gate short of memory slows down instead of the
-kernel killing it. These swap commands have not yet run on a runner here:
-
-```bash
-sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-To see how close a machine comes to running out of memory, watch `free` during a
-gate and search the kernel log after it:
-
-```bash
-free -m -s 5
-journalctl -k | grep -i 'out of memory'
 ```
 
 ## Environments belong to the caller
