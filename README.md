@@ -87,17 +87,6 @@ sudo visudo -cf /etc/sudoers.d/actions-runner
 sudo -u "$user" sudo -n true && echo 'passwordless sudo works'
 ```
 
-Then rerun only the failed job, from any machine with `gh`. A rerun lands on
-whichever runner is idle, so once the job starts, check that its line names the
-machine you fixed:
-
-```bash
-repo=zeroxsolutions/travel                  # the caller whose gate failed
-run=$(gh run list --repo "$repo" --status failure --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run rerun "$run" --repo "$repo" --failed
-gh api "repos/$repo/actions/runs/$run/jobs" --jq '.jobs[] | "\(.name) \(.status) \(.runner_name)"'
-```
-
 ### Libraries with no package in Playwright's table
 
 When the table has no package for a missing library, the step's warning lists the
