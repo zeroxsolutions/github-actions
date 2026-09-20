@@ -55,15 +55,14 @@ jobs:
       # not only its `e2e` target.
       #
       # The system libraries come from the caller's own Playwright, so its upgrade brings its
-      # own list. On Linux `install-deps` runs apt-get through sudo, which fails without a
-      # passwordless sudo for the runner user. `--dry-run` exits 0 once every package in
-      # Playwright's table is present, so a provisioned machine never reaches sudo, and on
-      # macOS both commands do nothing.
+      # own list. `install-deps` installs them through sudo, which fails without a passwordless
+      # sudo for the runner user, and does nothing at all on a machine Playwright holds no
+      # package list for. `--dry-run` exits 0 once every package in that list is present, so a
+      # provisioned machine never reaches sudo.
       #
-      # That table can lack a package for a library a browser loads (1.62.1 on Ubuntu 26.04
-      # has none for three of WebKit's), and only `playwright install` checks the libraries
-      # themselves. Its warning becomes an annotation rather than a failure, because a caller
-      # that never starts the browser concerned passes.
+      # The list can lack a package for a library a browser loads, and only `playwright install`
+      # checks the libraries themselves. Its warning becomes an annotation rather than a
+      # failure, because a caller that never starts the browser concerned passes.
       - name: Install Playwright browsers
         shell: bash
         run: |
@@ -107,9 +106,9 @@ jobs:
           echo "mode=$mode"   >> "$GITHUB_OUTPUT"
           echo "base=$base"   >> "$GITHUB_OUTPUT"
 
-      # `timeout` is on no macOS runner - checked on the self-hosted one 2026-09-10: no `timeout`,
-      # no `gtimeout`, no coreutils. The kill takes the process GROUP, because a gate's command
-      # is a tree and signalling the pid alone leaves the rest holding ports.
+      # No runner in this pool ships `timeout`, `gtimeout` or coreutils. The kill takes the
+      # process group, because a gate's command is a tree and signalling the pid alone leaves
+      # the rest holding ports.
       - name: Run the targets under a budget, so an overrun fails rather than reads as cancelled
         shell: bash
         env:
