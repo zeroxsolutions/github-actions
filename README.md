@@ -49,8 +49,29 @@ user's home:
 
 | Workspace | Directory | Cap |
 |---|---|---|
-| Nx | `~/.cache/nx-ci/<owner>/<repo>` | `NX_MAX_CACHE_SIZE=2GB`, set by the action |
+| Nx, task outputs | `~/.cache/nx-ci/<owner>/<repo>/artifacts` | `NX_MAX_CACHE_SIZE=2GB`, set by the action |
+| Nx, the metadata naming them | `~/.cache/nx-ci/<owner>/<repo>/metadata` | none |
 | Turborepo | `~/.cache/turbo-ci/<owner>/<repo>` | none; turbo has no counterpart |
+
+**Nx needs both, and moving one without the other is worse than moving neither.** The
+outputs live in `NX_CACHE_DIRECTORY` and the metadata naming them in
+`NX_WORKSPACE_DATA_DIRECTORY`, whose default is `.nx/workspace-data`, inside the
+workspace. A job that keeps the outputs and loses the metadata opens a full cache it
+is not allowed to read and says so:
+
+```
+Nx found unrecognized artifacts in the cache directory and will not be able to use them.
+Nx can only restore artifacts it has metadata about.
+```
+
+Every gate read `Cache: 0/118 hit (0%)` while that was true, under `actions/cache`
+first and then on the machine, because neither carried the metadata. A runner that
+ran gates before this version holds artifacts no metadata will ever name. Delete them
+once, on the machine:
+
+```bash
+rm -rf ~/.cache/nx-ci
+```
 
 Both runners default to a directory inside the workspace, and checkout empties
 that. A runner holding the `self-hosted` label keeps its disk between jobs, which
