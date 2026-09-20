@@ -84,31 +84,30 @@ find "$HOME/.cache/turbo-ci" -type f -atime +14 -delete
 ## What the machine supplies
 
 A job lands on whichever runner holding the `self-hosted` label is idle, so every
-such runner has to be able to run every caller's gate. Setup puts node and pnpm
-on `PATH` for the job alone, so the commands below need nothing on the machine
-but a shell.
+such runner has to be able to run every caller's gate. Setup puts node and pnpm on
+`PATH` for the job alone, so the commands below need nothing on the machine but a
+shell.
 
-The gates install Playwright's browsers and, on Linux, every system package
-Playwright's own table names for them, so a caller that upgrades Playwright gets
-the packages the new version names. The machine supplies the rest:
+The gates install Playwright's browsers and every system package Playwright's own
+table names for them, so a caller that upgrades Playwright gets the packages the
+new version names. The machine's own package manager supplies the rest, and a
+machine that has never run a gate is missing most of it:
 
 | Missing on the machine | What the gate reports |
 |---|---|
-| On Linux, passwordless sudo for the runner user, while any package is still missing | `sudo: A terminal is required to authenticate` in `Install Playwright browsers` |
+| Passwordless sudo for the runner user, while any package is still missing | `sudo: A terminal is required to authenticate` in `Install Playwright browsers` |
 | A library Playwright's table has no package for | a `Browser libraries missing` annotation, and `Missing libraries:` in that step's log |
 | For a caller whose tests start containers, a docker daemon the runner's own process can reach | `Could not find a working container runtime strategy` |
 
 ### Passwordless sudo
 
-`playwright install-deps` runs `sudo -- sh -c "apt-get ..."`, so a sudoers rule
-limited to `apt-get` does not match it. The rule below allows every command, and
-with it any job on the machine can run as root. Once every package is installed,
-`--dry-run` passes and the step stops calling sudo until a caller's Playwright
-upgrade names a new package.
+`playwright install-deps` installs through `sudo -- sh -c`, so a sudoers rule
+limited to the package manager does not match it. The rule below allows every
+command, and with it any job on the machine can run as root. Once every package is
+installed, `--dry-run` passes and the step stops calling sudo until a caller's
+Playwright upgrade names a new one.
 
-A freshly installed machine lacked 308 of those packages on 2026-09-15, so its
-first gate calls sudo, and a reinstalled machine needs the rule again. Check it on
-the machine:
+Check it on the machine:
 
 ```bash
 pid=$(pgrep -f Runner.Listener | head -1)
@@ -128,57 +127,38 @@ sudo -u "$user" sudo -n true && echo 'passwordless sudo works'
 
 ### Libraries with no package in Playwright's table
 
-When the table has no package for a missing library, the step's warning lists the
-library's file name instead. On Ubuntu 26.04 arm64, playwright-core 1.62.1 has no
-package for three that WebKit loads:
-
-```bash
-sudo apt-get install -y --no-install-recommends libgraphene-1.0-0 libvulkan1 libwebpmux3
-```
-
-For any other name the warning lists, find the package on the machine:
-
-```bash
-sudo apt-get install -y apt-file && sudo apt-file update   # once
-ldconfig -p | grep -F libvulkan.so.1                       # prints nothing while it is missing
-apt-file search libvulkan.so.1                             # names the package that ships it
-```
+The warning lists the missing library's file name instead of a package, and the
+machine's owner installs whatever ships it. `playwright install` is what checks the
+libraries themselves, so the warning comes back on every gate until the machine has
+them.
 
 ### Docker access
 
-testcontainers 12.1.0 gives no reason beyond that one line, so check the machine.
-The runner's install directory below is the default one:
+testcontainers gives no reason beyond that one line, so check the machine:
 
 ```bash
-cd /home/runner/actions-runner
-pid=$(pgrep -f Runner.Listener | head -1)
-user=$(ps -o user= -p "$pid")
+user=$(ps -o user= -p "$(pgrep -f Runner.Listener | head -1)")   # the user the runner service runs as
 echo "runner user: $user"
-ls -l /var/run/docker.sock                  # the socket and the group that owns it
-getent group docker                         # that group's gid
-grep Groups /proc/"$pid"/status             # the runner process must list that gid
+sudo -u "$user" docker info > /dev/null && echo 'the runner user reaches a daemon'
 ```
 
-No socket at `/var/run/docker.sock` usually means a rootless daemon, whose socket
-is under the user's runtime directory. Point the runner at it through `.env`,
-which the runner reads when it starts. Run this in the same shell as the check
-above:
+A daemon the runner user cannot reach is usually one listening on a socket that is
+not the default. `DOCKER_HOST` reaches the runner through the `.env` file in its
+install directory, which it reads when its service starts. Run this in the same
+shell as the check above:
 
 ```bash
-echo "DOCKER_HOST=unix:///run/user/$(id -u "$user")/docker.sock" | sudo tee -a .env
+cd ~/actions-runner                                              # the runner's install directory
+host=$(sudo -u "$user" docker context inspect --format '{{.Endpoints.docker.Host}}')
+echo "DOCKER_HOST=$host" | sudo tee -a .env
 sudo ./svc.sh stop && sudo ./svc.sh start
+sudo -u "$user" docker info > /dev/null && echo 'the runner user reaches a daemon'
 ```
 
-If the socket exists but `Groups` lacks its gid, the runner user is not in the
-group, or joined it after the runner started. A group reaches only the processes
-started after it was granted, so the commands below restart the runner. Run them
-in the same shell as the check above:
-
-```bash
-sudo usermod -aG docker "$user"
-sudo ./svc.sh stop && sudo ./svc.sh start
-grep Groups /proc/"$(pgrep -f Runner.Listener | head -1)"/status   # now lists the gid
-```
+If the socket is there and the runner still cannot reach it, the runner user is not
+in the group that owns it, or joined after the runner started. A group reaches only
+the processes started after it was granted, so restarting the service is part of
+the fix.
 
 ## Environments belong to the caller
 
