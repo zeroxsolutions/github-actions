@@ -38,13 +38,24 @@ runs:
     # nx's own default cap is a share of the free disk, which is no cap on a machine
     # every product's gate lands on. The cap belongs here rather than in a caller's
     # `nx.json` for the same reason: a product cannot see what else holds that disk.
+    #
+    # Both directories have to move. nx keeps the task outputs in one and the metadata
+    # naming them in the other, and it refuses an artifact it holds no metadata for:
+    # "Nx found unrecognized artifacts in the cache directory and will not be able to
+    # use them." Moving only the outputs leaves the metadata in `.nx/workspace-data`,
+    # which checkout wipes, so every job faces a full cache it is not allowed to read.
+    # That is what held every gate at `Cache: 0/118 hit (0%)`.
+    #
+    # Two jobs of one repository sharing a runner share this metadata. nx takes that
+    # lock the same way two terminals on a developer's machine do.
     - name: Point the nx cache at the runner's own disk
       shell: bash
       run: |
         cache_dir="${HOME}/.cache/nx-ci/${GITHUB_REPOSITORY}"
-        mkdir -p "${cache_dir}"
+        mkdir -p "${cache_dir}/artifacts" "${cache_dir}/metadata"
         {
-          echo "NX_CACHE_DIRECTORY=${cache_dir}"
+          echo "NX_CACHE_DIRECTORY=${cache_dir}/artifacts"
+          echo "NX_WORKSPACE_DATA_DIRECTORY=${cache_dir}/metadata"
           echo "NX_MAX_CACHE_SIZE=2GB"
         } >> "${GITHUB_ENV}"
 
