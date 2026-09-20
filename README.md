@@ -8,10 +8,10 @@ reaches every product.
 
 | Path | Kind | Purpose |
 |---|---|---|
-| `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, restore the nx cache. Both nx workflows run it. |
+| `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, point its nx cache at the machine's disk. Both nx workflows run it. |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares no environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
-| `turbo-setup/action.yml` | composite action | The same for a Turborepo workspace, caching `.turbo` instead of `.nx/cache`. |
+| `turbo-setup/action.yml` | composite action | The same for a Turborepo workspace, pointing `TURBO_CACHE_DIR` instead of `NX_CACHE_DIRECTORY`. |
 | `.github/workflows/turbo-gate.yml` | reusable workflow | Run turbo tasks. Declares no environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/turbo-deploy.yml` | reusable workflow | Run turbo deploy tasks inside a named environment. |
 
@@ -41,6 +41,45 @@ Keeping them in step is the product's job; nothing here compares them.
 An Nx product has no such constraint and should keep `packageManager` out of its
 manifest. pnpm switches itself to the version that field names, which gives
 different machines different pnpm versions.
+
+## The cache lives on the machine, not in GitHub's
+
+Both setup actions point the task runner's cache at a directory under the runner
+user's home:
+
+| Workspace | Directory | Cap |
+|---|---|---|
+| Nx | `~/.cache/nx-ci/<owner>/<repo>` | `NX_MAX_CACHE_SIZE=2GB`, set by the action |
+| Turborepo | `~/.cache/turbo-ci/<owner>/<repo>` | none; turbo has no counterpart |
+
+Both runners default to a directory inside the workspace, and checkout empties
+that. A runner holding the `self-hosted` label keeps its disk between jobs, which
+the pnpm store has always relied on, so the machine holds the cache and no job
+uploads or downloads one.
+
+`actions/cache` held it before, under a key ending in the commit SHA. A new commit
+matches no existing key, so every job wrote an entry and no job read one back
+exactly, and each entry was larger than the last because `restore-keys` handed it
+the previous one to add to. travel carried 25 of them, 10.8 GB against GitHub's
+10 GB per repository, and each job moved about half a gigabyte each way to keep
+them.
+
+A repository that was calling an older version still has those entries. Delete
+them once:
+
+```bash
+repo=zeroxsolutions/travel
+gh api "repos/$repo/actions/caches?per_page=100" \
+  --jq '.actions_caches[] | select(.key | test("^(nx|turbo)-")) | .id' \
+  | xargs -I{} gh api -X DELETE "repos/$repo/actions/caches/{}"
+gh api "repos/$repo/actions/caches" --jq '.total_count'   # what is left is mise's own
+```
+
+Nothing trims a Turborepo cache. Run this on the machine when its disk gets tight:
+
+```bash
+find "$HOME/.cache/turbo-ci" -type f -atime +14 -delete
+```
 
 ## What the machine supplies
 
