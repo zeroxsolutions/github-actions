@@ -30,6 +30,12 @@ on:
         type: number
         default: 30
 
+      max-cache-size:
+        description: 'Cap on the runner task cache for this repository, passed to nx-setup.'
+        required: false
+        type: string
+        default: '10GB'
+
 jobs:
   run:
     runs-on: self-hosted
@@ -49,6 +55,8 @@ jobs:
       # tag, so referencing the same moving tag keeps them in lockstep by
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/nx-setup@v1
+        with:
+          max-cache-size: ${{ inputs.max-cache-size }}
 
       # Nothing that launches a browser installs it: neither `playwright test` nor the
       # vitest browser provider does. A caller's `test` target can be what launches one,

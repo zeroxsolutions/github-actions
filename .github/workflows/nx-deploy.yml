@@ -38,6 +38,12 @@ on:
         type: number
         default: 30
 
+      max-cache-size:
+        description: 'Cap on the runner task cache for this repository, passed to nx-setup.'
+        required: false
+        type: string
+        default: '10GB'
+
 jobs:
   deploy:
     runs-on: self-hosted
@@ -66,6 +72,8 @@ jobs:
       # tag, so referencing the same moving tag keeps them in lockstep by
       # construction - moving v1 moves both together.
       - uses: zeroxsolutions/github-actions/nx-setup@v1
+        with:
+          max-cache-size: ${{ inputs.max-cache-size }}
 
       - name: Deploy
         shell: bash

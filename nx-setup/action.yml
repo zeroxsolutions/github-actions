@@ -17,6 +17,13 @@ inputs:
       pass 1 to check out faster.
     required: false
     default: '0'
+  max-cache-size:
+    description: >
+      Cap on the runner's task cache for this repository, in nx's size syntax
+      (e.g. "10GB"). It has to hold several full runs of the repository's
+      outputs; the machine's disk is shared with every other repository's cap.
+    required: false
+    default: '10GB'
 
 runs:
   using: composite
@@ -59,7 +66,7 @@ runs:
         {
           echo "NX_CACHE_DIRECTORY=${cache_dir}/artifacts"
           echo "NX_WORKSPACE_DATA_DIRECTORY=${cache_dir}/metadata"
-          echo "NX_MAX_CACHE_SIZE=10GB"
+          echo "NX_MAX_CACHE_SIZE=${{ inputs.max-cache-size }}"
         } >> "${GITHUB_ENV}"
 
     - name: Install the toolchain
