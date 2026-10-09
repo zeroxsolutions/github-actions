@@ -38,6 +38,9 @@ runs:
     # nx's own default cap is a share of the free disk, which is no cap on a machine
     # every product's gate lands on. The cap belongs here rather than in a caller's
     # `nx.json` for the same reason: a product cannot see what else holds that disk.
+    # The cap has to hold several full runs of a product's outputs, or each gate evicts the
+    # dependency builds the next pull request would have restored, and the hit rate falls to near
+    # zero even with both directories moved.
     #
     # Both directories have to move. nx keeps the task outputs in one and the metadata
     # naming them in the other, and it refuses an artifact it holds no metadata for:
@@ -56,7 +59,7 @@ runs:
         {
           echo "NX_CACHE_DIRECTORY=${cache_dir}/artifacts"
           echo "NX_WORKSPACE_DATA_DIRECTORY=${cache_dir}/metadata"
-          echo "NX_MAX_CACHE_SIZE=2GB"
+          echo "NX_MAX_CACHE_SIZE=10GB"
         } >> "${GITHUB_ENV}"
 
     - name: Install the toolchain
