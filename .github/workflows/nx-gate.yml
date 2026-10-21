@@ -36,6 +36,14 @@ on:
         type: string
         default: '10GB'
 
+    secrets:
+      EXPO_TOKEN:
+        description: >
+          An Expo access token, for a caller whose build target runs EAS Build. Passed
+          by name from the caller's repository secrets; it is not a deployment
+          environment's, so the gate still reaches no deployment credential.
+        required: false
+
 jobs:
   run:
     runs-on: self-hosted
@@ -122,6 +130,7 @@ jobs:
         env:
           NX_BASE: ${{ steps.range.outputs.base }}
           NX_HEAD: ${{ github.sha }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 - 120 ))
           [ "${budget_seconds}" -ge 60 ] || budget_seconds=60
