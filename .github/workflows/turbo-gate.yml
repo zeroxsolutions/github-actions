@@ -36,14 +36,6 @@ on:
         type: number
         default: 30
 
-    secrets:
-      EXPO_TOKEN:
-        description: >
-          An Expo access token, for a caller whose build target runs EAS Build. Passed
-          by name from the caller's repository secrets; it is not a deployment
-          environment's, so the gate still reaches no deployment credential.
-        required: false
-
 jobs:
   run:
     runs-on: self-hosted
@@ -120,7 +112,6 @@ jobs:
         env:
           TURBO_SCM_BASE: ${{ steps.range.outputs.base }}
           TURBO_SCM_HEAD: ${{ github.sha }}
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
             pnpm turbo run ${{ inputs.targets }} --affected
