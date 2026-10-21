@@ -193,10 +193,15 @@ So **this repository holds no product's credentials and cannot come to hold one
 by accident**. A caller that names a protected environment has its deploy job
 wait for that environment's reviewer.
 
-The gates take one secret, `EXPO_TOKEN`, optional, for a caller whose `build`
-target runs EAS Build. The caller passes it by name from its repository secrets
-(`secrets: { EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }} }`), and the gate puts it in
-the environment of the step that runs the targets and nowhere else.
+The deploys put an environment's `EXPO_TOKEN` in the environment of the step
+that runs the targets, beside its Cloudflare credentials, for a caller whose
+deploy targets run EAS Build. It resolves from the environment the deploy names,
+so each environment's builds use that environment's token.
+
+The gates still take an optional `EXPO_TOKEN` secret, which `v1` keeps for any
+caller that passes one. A caller passes it only from a repository secret, which
+every job of the repository can read, so a remote build belongs in the deploy,
+with the gate leaving it out.
 
 ## Ref pinning policy
 
