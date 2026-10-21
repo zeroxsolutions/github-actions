@@ -198,11 +198,6 @@ that runs the targets, beside its Cloudflare credentials, for a caller whose
 deploy targets run EAS Build. It resolves from the environment the deploy names,
 so each environment's builds use that environment's token.
 
-The gates still take an optional `EXPO_TOKEN` secret, which `v1` keeps for any
-caller that passes one. A caller passes it only from a repository secret, which
-every job of the repository can read, so a remote build belongs in the deploy,
-with the gate leaving it out.
-
 ## Ref pinning policy
 
 | Who pins what | To what | Why |
