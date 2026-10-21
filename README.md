@@ -193,6 +193,11 @@ So **this repository holds no product's credentials and cannot come to hold one
 by accident**. A caller that names a protected environment has its deploy job
 wait for that environment's reviewer.
 
+The gates take one secret, `EXPO_TOKEN`, optional, for a caller whose `build`
+target runs EAS Build. The caller passes it by name from its repository secrets
+(`secrets: { EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }} }`), and the gate puts it in
+the environment of the step that runs the targets and nowhere else.
+
 ## Ref pinning policy
 
 | Who pins what | To what | Why |
