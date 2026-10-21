@@ -97,7 +97,7 @@ jobs:
           planned="$(DEPLOY_ENV="$deploy_env" pnpm exec turbo run ${{ inputs.targets }} --dry=json \
             | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const t=(JSON.parse(s).tasks||[]).filter(x=>x.command&&x.command!=="<NONEXISTENT>");console.log(t.length)})')"
           if [ "$planned" -eq 0 ]; then
-            echo "::error::no package implements ${{ inputs.targets }}; nothing would be deployed"
+            echo "::error::No package implements ${{ inputs.targets }}, so this deploy would ship nothing. Add the task to the package it builds, or remove this job from a repository that has none."
             exit 1
           fi
           echo "deploying $planned task(s) with DEPLOY_ENV=$deploy_env"

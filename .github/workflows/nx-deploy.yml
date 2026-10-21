@@ -84,4 +84,15 @@ jobs:
         run: |
           config='${{ inputs.configuration }}'
           [ -n "$config" ] || config='${{ inputs.environment }}'
+
+          # A run-many over a target no project defines exits 0 having run nothing, so a deploy
+          # that ships nothing would read as a clean one. `pnpm exec` rather than `pnpm nx` so no
+          # package-manager banner reaches the comparison.
+          for target in ${{ inputs.targets }}; do
+            if [ "$(pnpm exec nx show projects --withTarget "$target" --json)" = '[]' ]; then
+              echo "::error::No project defines $target, so this deploy would ship nothing. Add the target to the project it builds, or remove this job from a repository that has none."
+              exit 1
+            fi
+          done
+
           pnpm nx run-many -t ${{ inputs.targets }} -c "$config"
