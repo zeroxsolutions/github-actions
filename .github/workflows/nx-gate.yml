@@ -36,6 +36,16 @@ on:
         type: string
         default: '10GB'
 
+      exclude:
+        description: >
+          Projects to leave out of this run, as nx's --exclude takes them, e.g.
+          "tag:remote-build". Empty runs every project the mode selects. It applies to
+          every target in the run, so a caller that leaves a project out of one target
+          calls this workflow once more for the others.
+        required: false
+        type: string
+        default: ''
+
     secrets:
       EXPO_TOKEN:
         description: >
@@ -132,6 +142,9 @@ jobs:
           NX_HEAD: ${{ github.sha }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
+          exclude=()
+          [ -z "${{ inputs.exclude }}" ] || exclude=(--exclude="${{ inputs.exclude }}")
+
           budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 - 120 ))
           [ "${budget_seconds}" -ge 60 ] || budget_seconds=60
           overrun_marker="${RUNNER_TEMP:-/tmp}/nx-gate-overrun.$$"
@@ -139,9 +152,9 @@ jobs:
 
           set -m
           if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
-            pnpm nx affected -t ${{ inputs.targets }} &
+            pnpm nx affected -t ${{ inputs.targets }} "${exclude[@]}" &
           else
-            pnpm nx run-many -t ${{ inputs.targets }} &
+            pnpm nx run-many -t ${{ inputs.targets }} "${exclude[@]}" &
           fi
           command_pid=$!
           set +m
