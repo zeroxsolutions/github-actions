@@ -20,7 +20,7 @@ runner under that label, outside this repository, and nothing here provisions on
 
 A product on Nx calls the `nx-*` pair and a product on Turborepo calls the
 `turbo-*` pair. Both pairs run on the same self-hosted runner, pin the same
-third-party SHAs and share no state. The gates take the same inputs, except `exclude`, which only `nx-gate` takes. The deploys
+third-party SHAs and share no state. The gates take the same inputs, except `exclude` and `parallel`, which only `nx-gate` takes. The deploys
 differ in one: `nx-deploy` takes `configuration` and `turbo-deploy` `deploy-env`.
 
 Call a `*-gate` or `*-deploy` workflow when a job only runs targets. When the job
