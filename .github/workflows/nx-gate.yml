@@ -46,6 +46,15 @@ on:
         type: string
         default: ''
 
+      parallel:
+        description: >
+          How many tasks nx runs at once, as nx's --parallel takes it, e.g. "1" or
+          "false" for one at a time. Empty leaves it to the caller's nx.json, or to
+          nx's own default of 3 when nx.json sets none.
+        required: false
+        type: string
+        default: ''
+
 jobs:
   run:
     runs-on: self-hosted
@@ -135,6 +144,8 @@ jobs:
         run: |
           exclude=()
           [ -z "${{ inputs.exclude }}" ] || exclude=(--exclude="${{ inputs.exclude }}")
+          parallel=()
+          [ -z "${{ inputs.parallel }}" ] || parallel=(--parallel="${{ inputs.parallel }}")
 
           budget_seconds=$(( ${{ inputs.timeout-minutes }} * 60 - 120 ))
           [ "${budget_seconds}" -ge 60 ] || budget_seconds=60
@@ -143,9 +154,9 @@ jobs:
 
           set -m
           if [ '${{ steps.range.outputs.mode }}' = 'affected' ]; then
-            pnpm nx affected -t ${{ inputs.targets }} "${exclude[@]}" &
+            pnpm nx affected -t ${{ inputs.targets }} "${exclude[@]}" "${parallel[@]}" &
           else
-            pnpm nx run-many -t ${{ inputs.targets }} "${exclude[@]}" &
+            pnpm nx run-many -t ${{ inputs.targets }} "${exclude[@]}" "${parallel[@]}" &
           fi
           command_pid=$!
           set +m
