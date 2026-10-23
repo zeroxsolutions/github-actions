@@ -1,21 +1,20 @@
-# Keeps the SHA pins in both setup actions current.
+# Keeps the SHA pins in the setup action current.
 #
 # Without this, pinning third-party actions by commit SHA quietly becomes
 # pinning them to whatever was current the day they were written - which is the
 # exact failure SHA-pinning is meant to prevent. Each bump is reviewed here once
 # and reaches every product through the moving `v1` tag.
 #
-# Every pin lives in `nx-setup/action.yml` and `turbo-setup/action.yml`, and none
-# in `.github/workflows`. For `github-actions`, a directory covers that
-# repository's workflow files and a manifest sitting directly in it, so each
-# action's own folder has to be named or its pins are never read.
+# Every pin lives in `nx-setup/action.yml`, and none in `.github/workflows`. For
+# `github-actions`, a directory covers that repository's workflow files and a
+# manifest sitting directly in it, so the action's own folder has to be named or
+# its pins are never read.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directories:
       - /
       - /nx-setup
-      - /turbo-setup
     schedule:
       interval: weekly
     open-pull-requests-limit: 3

@@ -1,8 +1,7 @@
 # github-actions
 
-Shared CI/CD workflows and actions for ZeroXSolutions monorepos, on Nx or on
-Turborepo. A product calls them instead of copying them, so a fix made here
-reaches every product.
+Shared CI/CD workflows and actions for ZeroXSolutions monorepos on Nx. A product
+calls them instead of copying them, so a fix made here reaches every product.
 
 ## What is here
 
@@ -11,47 +10,31 @@ reaches every product.
 | `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, point its nx cache at the machine's disk. Both nx workflows run it. |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares no environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
-| `turbo-setup/action.yml` | composite action | The same for a Turborepo workspace, pointing `TURBO_CACHE_DIR` instead of `NX_CACHE_DIRECTORY`. |
-| `.github/workflows/turbo-gate.yml` | reusable workflow | Run turbo tasks. Declares no environment, so a gate cannot reach a deployment credential. |
-| `.github/workflows/turbo-deploy.yml` | reusable workflow | Run turbo deploy tasks inside a named environment. |
 
 Every workflow here names `runs-on: self-hosted`. Each machine registers its own
 runner under that label, outside this repository, and nothing here provisions one.
 
-A product on Nx calls the `nx-*` pair and a product on Turborepo calls the
-`turbo-*` pair. Both pairs run on the same self-hosted runner, pin the same
-third-party SHAs and share no state. The gates take the same inputs, except `exclude` and `parallel`, which only `nx-gate` takes. The deploys
-differ in one: `nx-deploy` takes `configuration` and `turbo-deploy` `deploy-env`.
-
-Call a `*-gate` or `*-deploy` workflow when a job only runs targets. When the job
-needs steps of its own, use the matching `*-setup` action in that job instead,
-because a job that calls a reusable workflow cannot add steps to it.
+Call `nx-gate` or `nx-deploy` when a job only runs targets. When the job needs
+steps of its own, use `nx-setup` in that job instead, because a job that calls a
+reusable workflow cannot add steps to it.
 
 ## Versions come from the caller, not from here
 
-Both setup actions install the toolchain with mise, which reads the calling
+`nx-setup` installs the toolchain with mise, which reads the calling
 repository's `.tool-versions`. Nothing here pins a product's toolchain, so a
 product upgrading Node changes one file in its own repository and nothing else.
 
-**Turborepo forces a second declaration of pnpm.** Turbo refuses to resolve a
-workspace without `devEngines.packageManager` (or the legacy `packageManager`)
-in `package.json`, so a turbo product carries its pnpm version in two files.
-Keeping them in step is the product's job; nothing here compares them.
-
-An Nx product has no such constraint and should keep `packageManager` out of its
-manifest. pnpm switches itself to the version that field names, which gives
-different machines different pnpm versions.
+A product keeps `packageManager` out of its manifest. pnpm switches itself to the
+version that field names, which gives different machines different pnpm versions.
 
 ## The cache lives on the machine, not in GitHub's
 
-Both setup actions point the task runner's cache at a directory under the runner
-user's home:
+`nx-setup` points nx's cache at a directory under the runner user's home:
 
 | Workspace | Directory | Cap |
 |---|---|---|
 | Nx, task outputs | `~/.cache/nx-ci/<owner>/<repo>/artifacts` | `NX_MAX_CACHE_SIZE=2GB`, set by the action |
 | Nx, the metadata naming them | `~/.cache/nx-ci/<owner>/<repo>/metadata` | none |
-| Turborepo | `~/.cache/turbo-ci/<owner>/<repo>` | none; turbo has no counterpart |
 
 **Nx needs both, and moving one without the other is worse than moving neither.** The
 outputs live in `NX_CACHE_DIRECTORY` and the metadata naming them in
@@ -73,10 +56,10 @@ once, on the machine:
 rm -rf ~/.cache/nx-ci
 ```
 
-Both runners default to a directory inside the workspace, and checkout empties
-that. A runner holding the `self-hosted` label keeps its disk between jobs, which
-the pnpm store has always relied on, so the machine holds the cache and no job
-uploads or downloads one.
+Nx defaults to directories inside the workspace, and checkout empties them. A
+runner holding the `self-hosted` label keeps its disk between jobs, which the pnpm
+store has always relied on, so the machine holds the cache and no job uploads or
+downloads one.
 
 `actions/cache` held it before, under a key ending in the commit SHA. A new commit
 matches no existing key, so every job wrote an entry and no job read one back
@@ -91,15 +74,9 @@ them once:
 ```bash
 repo=zeroxsolutions/travel
 gh api "repos/$repo/actions/caches?per_page=100" \
-  --jq '.actions_caches[] | select(.key | test("^(nx|turbo)-")) | .id' \
+  --jq '.actions_caches[] | select(.key | test("^nx-")) | .id' \
   | xargs -I{} gh api -X DELETE "repos/$repo/actions/caches/{}"
 gh api "repos/$repo/actions/caches" --jq '.total_count'   # what is left is mise's own
-```
-
-Nothing trims a Turborepo cache. Run this on the machine when its disk gets tight:
-
-```bash
-find "$HOME/.cache/turbo-ci" -type f -atime +14 -delete
 ```
 
 ## What the machine supplies
