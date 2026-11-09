@@ -10,6 +10,7 @@ calls them instead of copying them, so a fix made here reaches every product.
 | `nx-setup/action.yml` | composite action | Check out the caller, install its toolchain and dependencies, point its nx cache at the machine's disk. Both nx workflows run it. |
 | `.github/workflows/nx-gate.yml` | reusable workflow | Run nx targets. Declares no environment, so a gate cannot reach a deployment credential. |
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
+| `nx-dependabot/action.yml` | composite action | Fail when the caller's `.github/dependabot.yml` does not leave to `nx migrate` what the installed nx plugins manage. Runs after `nx-setup`. |
 
 Every workflow here names `runs-on: self-hosted`. Each machine registers its own
 runner under that label, outside this repository, and nothing here provisions one.
@@ -17,6 +18,56 @@ runner under that label, outside this repository, and nothing here provisions on
 Call `nx-gate` or `nx-deploy` when a job only runs targets. When the job needs
 steps of its own, use `nx-setup` in that job instead, because a job that calls a
 reusable workflow cannot add steps to it.
+
+## Dependabot leaves to `nx migrate` what nx manages
+
+`nx migrate` moves nx, every `@nx/*` plugin and each third-party package a plugin's
+`migrations.json` names under `packageJsonUpdates`, and rewrites the workspace's
+config and code for the new versions in the same step. A Dependabot bump of one of
+those packages moves the version and skips the rewrite; one beyond the range the
+installed plugins support breaks them.
+
+`nx-dependabot` reads that list from the installed plugins and checks a block of the
+npm entry's `ignore:` list against it:
+
+| Package | Ignored |
+|---|---|
+| `nx`, `@nx/*` | every update |
+| managed at `^X.Y.Z`, X >= 1 | `semver-major` |
+| managed at `~X.Y.Z` or `^0.Y.Z` | `semver-major` and `semver-minor` |
+
+Only packages the workspace declares, in a `package.json` or its pnpm catalog, are
+listed. The block sits between two markers, so a repository keeps its own entries
+outside them:
+
+```yaml
+    ignore:
+      # nx-managed:start
+      # nx-managed:end
+      - dependency-name: '@types/node'   # the repository's own
+        update-types: [version-update:semver-major]
+```
+
+A caller runs it in a job of its own:
+
+```yaml
+  dependabot:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: zeroxsolutions/github-actions/nx-setup@v1
+      - uses: zeroxsolutions/github-actions/nx-dependabot@v1
+```
+
+A failure prints the block it expects. To rewrite the block in place, run this from
+the workspace root with dependencies installed:
+
+```bash
+node <a clone of this repository>/nx-dependabot/check.mjs --write
+```
+
+An `nx migrate` that brings a new managed package, or moves one's range, fails the
+check on its own pull request, which is where the block is updated.
 
 ## Versions come from the caller, not from here
 
