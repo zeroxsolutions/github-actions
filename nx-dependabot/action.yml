@@ -1,0 +1,12 @@
+# Fails when the calling repository's Dependabot config does not leave to `nx migrate` what the
+# installed nx plugins manage. Run it after `nx-setup`, because the list is read from the
+# installed plugins' migrations.json; `check.mjs` carries the rule and the block it expects.
+name: nx-dependabot
+description: Check that .github/dependabot.yml ignores what nx migrate manages, as the installed nx plugins name it.
+
+runs:
+  using: composite
+  steps:
+    - name: Check the nx-managed block of the Dependabot config
+      shell: bash
+      run: node "${{ github.action_path }}/check.mjs"
