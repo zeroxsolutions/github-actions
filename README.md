@@ -60,10 +60,12 @@ A caller runs it in a job of its own:
 ```
 
 A failure prints the block it expects. To rewrite the block in place, run this from
-the workspace root with dependencies installed:
+the workspace root with dependencies installed; it needs `gh` signed in, not a clone
+of this repository:
 
 ```bash
-node <a clone of this repository>/nx-dependabot/check.mjs --write
+gh api 'repos/zeroxsolutions/github-actions/contents/nx-dependabot/check.mjs?ref=v1' \
+  -H 'Accept: application/vnd.github.raw' | node --input-type=module - --write
 ```
 
 An `nx migrate` that brings a new managed package, or moves one's range, fails the

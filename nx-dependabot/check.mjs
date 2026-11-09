@@ -25,6 +25,11 @@ const CONFIG = '.github/dependabot.yml';
 const START = '# nx-managed:start';
 const END = '# nx-managed:end';
 const write = process.argv.includes('--write');
+// Runs from any checkout with `gh` signed in, so fixing the block needs no clone of this repository.
+const WRITE_COMMAND = [
+  "gh api 'repos/zeroxsolutions/github-actions/contents/nx-dependabot/check.mjs?ref=v1' \\",
+  "  -H 'Accept: application/vnd.github.raw' | node --input-type=module - --write",
+].join('\n');
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
@@ -117,7 +122,7 @@ const block = entries.map((line) => indent + line);
 
 if (start < 0 || end < start) {
   console.error(`::error file=${CONFIG}::No ${START} ... ${END} block in the npm entry's ignore list.`);
-  console.error(`Add this under the npm entry's \`ignore:\`, then rerun:\n\n${indent}${START}\n${block.join('\n')}\n${indent}${END}`);
+  console.error(`Add the two markers under the npm entry's \`ignore:\`, then run:\n\n${WRITE_COMMAND}\n\nThe block it writes:\n\n${indent}${START}\n${block.join('\n')}\n${indent}${END}`);
   process.exit(1);
 }
 
@@ -133,5 +138,5 @@ if (write) {
 }
 console.error(`::error file=${CONFIG}::The nx-managed block does not match the installed nx plugins.`);
 console.error(`Expected, between the markers:\n\n${block.join('\n')}\n`);
-console.error('Rewrite it with: node <a clone of zeroxsolutions/github-actions>/nx-dependabot/check.mjs --write');
+console.error(`Rewrite it from the workspace root, with dependencies installed:\n\n${WRITE_COMMAND}`);
 process.exit(1);
