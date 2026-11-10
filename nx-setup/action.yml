@@ -72,12 +72,14 @@ runs:
     # mise-action restores its cache by absolute path. On a self-hosted runner that runs as a
     # person's own account, the default `~/.local/share/mise` is that person's mise, so a cache
     # hit rolls back their installs, global npm packages included, to whatever the cache was
-    # saved with. The tool cache directory belongs to this runner alone. mise-action's
-    # `mise_dir` input moves only what it caches, not where mise installs, so the directory is
-    # set as MISE_DATA_DIR, which both read.
-    - name: Keep mise's installs in the runner's own directory
+    # saved with. Like the nx cache above, CI's mise lives under `~/.cache/`, where no tool a
+    # person runs looks. Unlike it, the directory is not per repository: mise keeps every
+    # version side by side, so every runner on a machine installs a toolchain once.
+    # mise-action's `mise_dir` input moves only what it caches, not where mise installs, so
+    # the directory is set as MISE_DATA_DIR, which both read.
+    - name: Keep CI's mise out of the account's own
       shell: bash
-      run: echo "MISE_DATA_DIR=${RUNNER_TOOL_CACHE}/mise" >> "${GITHUB_ENV}"
+      run: echo "MISE_DATA_DIR=${HOME}/.cache/mise-ci" >> "${GITHUB_ENV}"
 
     - name: Install the toolchain
       uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
