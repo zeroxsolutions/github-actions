@@ -32,6 +32,15 @@ on:
         type: string
         default: ''
 
+      runs-on:
+        description: >
+          The runner label the job runs on. A public repository passes a GitHub-hosted
+          label such as "ubuntu-latest": a pull request from a fork runs its own code on
+          the runner, and a self-hosted one keeps its disk and grants sudo.
+        required: false
+        type: string
+        default: self-hosted
+
       timeout-minutes:
         description: 'Minutes before the job is killed. Deploys measured here run under 5 minutes.'
         required: false
@@ -46,8 +55,8 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
-    # GitHub's default is 360 minutes, and these runners are self-hosted and take
+    runs-on: ${{ inputs.runs-on }}
+    # GitHub's default is 360 minutes, and a self-hosted runner takes
     # one job at a time, so a hung job holds a runner out of the pool for six
     # hours. Killing a deploy leaves a partial sweep - so does the 6-hour
     # default, six hours later - and re-running the same commit repairs it.

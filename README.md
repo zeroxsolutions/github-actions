@@ -12,8 +12,13 @@ calls them instead of copying them, so a fix made here reaches every product.
 | `.github/workflows/nx-deploy.yml` | reusable workflow | Run nx deploy targets inside a named environment. |
 | `nx-dependabot/action.yml` | composite action | Fail when the caller's `.github/dependabot.yml` does not leave to `nx migrate` what the installed nx plugins manage. Runs after `nx-setup`. |
 
-Every workflow here names `runs-on: self-hosted`. Each machine registers its own
-runner under that label, outside this repository, and nothing here provisions one.
+Every workflow here runs on `self-hosted` unless its caller passes `runs-on`. Each
+machine registers its own runner under that label, outside this repository, and
+nothing here provisions one. A public repository passes a GitHub-hosted label such
+as `runs-on: ubuntu-latest`, because a pull request from a fork runs its own code on
+the runner, and a self-hosted one keeps its disk between jobs and grants the runner
+user passwordless sudo. A job of the caller's own that composes `nx-setup` names its
+runner itself.
 
 Call `nx-gate` or `nx-deploy` when a job only runs targets. When the job needs
 steps of its own, use `nx-setup` in that job instead, because a job that calls a
@@ -248,14 +253,3 @@ every caller. A change that removes an input, renames one, or alters what a
 workflow does to a caller's repository is a new major version. Tag it `v2` and
 leave `v1` where it is, so a product takes the break only when it changes its own
 pin.
-
-## Calling this repository from a private product
-
-This repository is private, so another repository cannot call its workflows until
-the Actions access policy allows it. The policy defaults to `none`, and this
-command, run once, sets it:
-
-```bash
-gh api -X PUT repos/zeroxsolutions/github-actions/actions/permissions/access \
-  -f access_level=organization
-```
