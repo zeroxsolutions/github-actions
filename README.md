@@ -40,6 +40,7 @@ npm entry's `ignore:` list against it:
 | `nx`, `@nx/*` | every update |
 | managed at `^X.Y.Z`, X >= 1 | `semver-major` |
 | managed at `~X.Y.Z` or `^0.Y.Z` | `semver-major` and `semver-minor` |
+| managed, declared past that range | every update, until a plugin release names its line |
 
 Only packages the workspace declares, in a `package.json` or its pnpm catalog, are
 listed. The block sits between two markers, so a repository keeps its own entries
