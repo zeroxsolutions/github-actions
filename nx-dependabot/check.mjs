@@ -13,6 +13,9 @@
 //   a managed package at ^X.Y.Z    semver-major ignored, X >= 1
 //   a managed package at ~X.Y.Z,   semver-major and semver-minor ignored; on 0.x a minor
 //     or at ^0.Y.Z                 is a breaking release, as a major is on 1.x
+//   a managed package the          ignored entirely; it is on a version the installed plugins
+//     workspace declares past        do not support yet, so even its patches wait for the
+//     that range                     plugin release that names its line
 //
 // The block sits between `# nx-managed:start` and `# nx-managed:end` inside the npm entry's
 // `ignore:` list, so a repository keeps its own entries outside the markers.
@@ -74,21 +77,28 @@ for (const plugin of plugins) {
 }
 
 // A plugin names packages for setups this workspace may not have, such as a bundler it does
-// not use; only those the workspace declares belong in its Dependabot config.
-const declared = new Set();
+// not use; only those the workspace declares belong in its Dependabot config. Each name keeps
+// the specifiers it is declared with, to tell a workspace past the plugin's range.
+const declared = new Map();
+const declare = (name, specifier) => {
+  if (!declared.has(name)) declared.set(name, []);
+  if (typeof specifier === 'string') declared.get(name).push(specifier);
+};
 const tracked = execFileSync('git', ['ls-files', '--', 'package.json', '**/package.json'], { encoding: 'utf8' })
   .split('\n')
   .filter(Boolean);
 for (const path of tracked) {
   const manifest = readJson(path);
   for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-    for (const name of Object.keys(manifest[field] ?? {})) declared.add(name);
+    for (const [name, specifier] of Object.entries(manifest[field] ?? {})) declare(name, specifier);
   }
 }
 // A pnpm catalog holds the version a package.json names as `catalog:`.
 if (existsSync('pnpm-workspace.yaml')) {
-  for (const match of readFileSync('pnpm-workspace.yaml', 'utf8').matchAll(/^\s+['"]?(@?[\w./-]+)['"]?\s*:/gm)) {
-    declared.add(match[1]);
+  // A named catalog's own key, such as `expo:` above its entries, carries no version.
+  const catalogEntry = /^[ \t]+['"]?(@?[\w./-]+)['"]?[ \t]*:[ \t]*['"]?([^'"#\s]*)/gm;
+  for (const match of readFileSync('pnpm-workspace.yaml', 'utf8').matchAll(catalogEntry)) {
+    declare(match[1], match[2]);
   }
 }
 
@@ -99,9 +109,34 @@ const entries = [
   '- dependency-name: nx',
   "- dependency-name: '@nx/*'",
 ];
+// The first version a range leaves out, matching the update types ignored below: the next
+// major for ^X.Y.Z with X >= 1, the next minor for ~X.Y.Z, ^0.Y.Z or an exact X.Y.Z. A range
+// with no upper bound, such as >=X.Y.Z, gives none.
+const ceiling = (range) => {
+  const lowest = parse(range.replace(/^[\^~=\s]+/, ''));
+  if (!lowest || /^[<>]/.test(range.trim())) return null;
+  return range.startsWith('^') && lowest[0] >= 1 ? [lowest[0] + 1, 0, 0, 0] : [lowest[0], lowest[1] + 1, 0, 0];
+};
+// A specifier past the ceiling is one whose lowest version is at or above it; `catalog:`,
+// `workspace:` and other protocols name no version and are skipped.
+const pastRange = (name, range) => {
+  const top = ceiling(range);
+  return (
+    top !== null &&
+    declared.get(name).some((specifier) => {
+      const lowest = parse(specifier.replace(/^[\^~=v\s]+/, ''));
+      return lowest !== null && compare(lowest, top) >= 0;
+    })
+  );
+};
+
 const managed = [...ranges.keys()].filter((name) => declared.has(name)).sort();
 for (const name of managed) {
   const range = ranges.get(name).range;
+  if (pastRange(name, range)) {
+    entries.push(`- dependency-name: ${quote(name)} # nx: ${range}; declared past it`);
+    continue;
+  }
   const lowest = parse(range.replace(/^[\^~>=<\s]+/, ''));
   const majorOnly = range.startsWith('^') && lowest && lowest[0] >= 1;
   const types = majorOnly
